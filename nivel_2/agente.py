@@ -85,7 +85,11 @@ Nao chame mais ferramentas depois de decidir responder o JSON final."""
 
 
 class ParecerLLM(BaseModel):
-    nivel_risco: Literal["baixo", "medio", "alto"]
+    # O enunciado especifica os niveis como baixo/medio/alto (com acento em "medio").
+    # Aceitamos as duas grafias porque o modelo alterna entre elas de forma imprevisivel;
+    # rejeitar "medio" sem acento seria descartar um parecer valido por detalhe ortografico.
+    # A normalizacao para a forma do enunciado acontece na comparacao (confronto.py).
+    nivel_risco: Literal["baixo", "medio", "médio", "alto"]
     tipologia_suspeita: str
     red_flags: list[str]
     justificativa: str
