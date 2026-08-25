@@ -1,0 +1,45 @@
+# Um servico por entregavel, todos sobre a mesma imagem. A separacao existe para
+# documentar como rodar cada parte, nao porque precisem de ambientes diferentes.
+#
+# A chave vem do .env local (que NAO esta no repositorio nem na imagem) e e injetada
+# em runtime. Se o .env nao existir, os servicos que usam LLM falham com erro claro
+# de variavel ausente - de proposito, e melhor que rodar com chave vazia.
+
+services:
+  # Nivel 1 - notebook ja vem executado no repositorio; isto e para reexecutar/inspecionar.
+  notebook:
+    build: .
+    env_file: .env
+    ports:
+      - "8888:8888"
+    volumes:
+      # outputs montado para que os resultados apareçam na maquina do host, nao so no container
+      - ./outputs:/app/outputs
+      - ./nivel_1:/app/nivel_1
+
+  # Nivel 2 - regras em escala, lote do agente e confronto, em sequencia.
+  nivel2:
+    build: .
+    env_file: .env
+    working_dir: /app/nivel_2
+    volumes:
+      - ./outputs:/app/outputs
+    command: >
+      sh -c "python dados.py && python lote.py && python confronto.py"
+
+  # Nivel 3 - agente consumindo as ferramentas por MCP e a validacao dos transportes.
+  nivel3:
+    build: .
+    env_file: .env
+    volumes:
+      - ./outputs:/app/outputs
+    command: >
+      sh -c "python nivel_3/agente_mcp.py --lote && python nivel_3/comparar_transportes.py"
+
+  # Verificacao rapida de que o ambiente do container esta igual ao descrito na entrega,
+  # sem gastar chamada de LLM.
+  verificar:
+    build: .
+    volumes:
+      - ./outputs:/app/outputs
+    command: python verificar_ambiente.py

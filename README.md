@@ -10,11 +10,28 @@ número ultrapassou um limite — ele interpreta o padrão e redige o parecer.
 
 ## Como rodar
 
+### Com Docker (recomendado)
+
+```bash
+cp .env.example .env                  # preencha GROQ_API_KEY
+docker compose run --rm verificar     # smoke test: não precisa de chave nem chama LLM
+docker compose up notebook            # Nível 1 em http://localhost:8888
+docker compose run --rm nivel2        # regras em escala + lote + confronto
+docker compose run --rm nivel3        # agente via MCP + comparação de transportes
+```
+
+O `verificar` reexecuta a camada determinística e compara com os números desta entrega —
+é a prova de que o pipeline de regras reproduz em qualquer máquina. Detalhes e o que ele
+deliberadamente **não** garante em [`docs/REPRODUTIBILIDADE.md`](docs/REPRODUTIBILIDADE.md).
+
+### Sem Docker
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env    # preencha GROQ_API_KEY com sua chave
+python verificar_ambiente.py
 ```
 
 Nível 1 (notebook, já commitado com as saídas executadas):

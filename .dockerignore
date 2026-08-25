@@ -1,0 +1,8 @@
+# A chave nunca pode entrar na imagem
+.env
+
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.git/
