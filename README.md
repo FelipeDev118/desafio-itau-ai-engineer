@@ -71,7 +71,10 @@ python confronto.py    # confronta regra vs. agente -> outputs/
   fracionamento não consultam o recorte diário, porque o prompt informa *que* a flag está ativa
   sem informar *em qual data*. Analisado em
   [`docs/DECISOES.md`](docs/DECISOES.md#nível-2--agente-e-ferramentas).
-- A **taxa de concordância entre regra e agente foi de 40%**, e as 6 divergências seguem um
-  padrão claro: o agente escala o risco com base em contexto que a regra simples não enxerga
-  (contraparte sem histórico, canal atípico para o perfil). Análise em
+- A **concordância entre regra e agente foi de 50%**, mas o achado relevante está nas
+  divergências: em 2 dos 5 casos **a regra estava certa e o agente errado** — em `CLI-005` o
+  parecer fundamenta o risco numa operação de R$ 409,16 que está *abaixo* da mediana do cliente
+  (a operação realmente atípica era outra, de R$ 30.743,97) e ainda alucina o ano da data. O
+  texto soa técnico e plausível mesmo estando errado, o que é o argumento mais concreto desta
+  entrega a favor de manter a camada determinística auditável. Análise em
   [`docs/DECISOES.md`](docs/DECISOES.md#nível-2--confronto-regra-vs-modelo).

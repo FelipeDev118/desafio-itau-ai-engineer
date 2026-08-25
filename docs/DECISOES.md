@@ -130,31 +130,71 @@ respostas (sugerido no enunciado) por falta de tempo — ver "o que faria com ma
 
 ## Nível 2 — Confronto regra vs. modelo
 
-**Critério de correspondência**: cliente com **ambas** as flags determinísticas ativas
-(fracionamento **e** valor atípico) → regra esperaria `nivel_risco = "alto"`; cliente com
-**apenas uma** flag ativa → regra esperaria `"medio"`. Escolhido porque reflete a ideia de que
-duas regras concordando é mais forte que uma só — e é o critério mais simples e defensável dado
-que o enunciado deixa a escolha em aberto.
+**Primeiro critério, descartado.** Comecei com "ambas as flags ativas → alto; apenas uma →
+médio". Ao auditar o resultado, percebi que ele é **degenerado nesta base**: nenhum dos 10
+clientes dispara as duas regras ao mesmo tempo, então o ramo "alto" nunca é exercido e todos os
+10 casos esperam "médio". A taxa de concordância viraria uma métrica vazia — ela mediria apenas
+"com que frequência o agente diz médio", não o alinhamento entre regra e modelo. Registro o
+descarte porque o raciocínio importa mais que o número final.
 
-**Resultado real da execução** (`outputs/confronto_regra_vs_agente.csv`): taxa de concordância
-de **40% (4/10)**. Nos 6 casos divergentes, o padrão foi sistemático: o agente **escalou** de
-"médio" (esperado pela regra) para "alto", e em todos os casos com justificativa concreta
-ancorada nos dados reais — contraparte sem histórico de relacionamento anterior, canal incomum
-para o perfil do cliente (ex.: boleto ou espécie onde o padrão é PIX/TED), ou concentração do
-volume em poucas operações. Isso é exatamente o comportamento que o enunciado antecipa
-("nossas regras são propositalmente simples e vão gerar falsos positivos... um agente que
-discorda com boa justificativa pode estar certo"): a Regra 2 (valor atípico) sinaliza qualquer
-outlier estatístico do próprio histórico do cliente, sem considerar se a contraparte é conhecida
-ou se o canal é coerente com o padrão — informação que o agente tinha acesso via
-`historico_cliente` e `perfil_canal`, e a regra determinística, por desenho, não usa. Na leitura
-que fiz das 6 divergências, concordo com o agente em pelo menos metade delas — o contexto
-adicional (contraparte nova, canal atípico) é um sinal real que a regra simples não captura.
+**Critério adotado**, baseado na *intensidade* da sinalização e não em "quantas regras
+distintas dispararam":
 
-**Achado colateral**: a justificativa do parecer de `CLI-028` veio com caracteres Unicode
-invisíveis (zero-width spaces) intercalados no meio do texto, cortando a frase de forma
-estranha. O JSON continuou válido e passou na validação de schema — registro isso como
-observação de robustez: validar schema não é suficiente para garantir que o *texto* dentro dos
-campos está limpo; um pipeline de produção precisaria de uma etapa de sanitização de texto.
+| Condição determinística | `nivel_risco` esperado |
+|---|---|
+| `flag_fracionamento` ativa **ou** 2+ operações com valor atípico | `alto` |
+| exatamente 1 operação atípica, sem fracionamento | `médio` |
+
+Fracionamento vai direto para "alto" porque é um padrão **intencional** (structuring), não um
+outlier estatístico; e 2+ operações atípicas indicam recorrência, não um evento isolado. Isso
+exercita os dois ramos (6 casos esperam "alto", 4 esperam "médio").
+
+**Resultado** (`outputs/confronto_regra_vs_agente.csv`): concordância de **50% (5/10)**, com
+divergências **nas duas direções** — 4 casos em que o agente foi mais conservador que a regra e
+1 em que foi mais severo. Isso é mais informativo que o critério anterior, onde toda divergência
+apontava para o mesmo lado.
+
+**Análise das divergências — e aqui a resposta não é "o agente estava certo".** O enunciado
+sugere que um agente que discorda com boa justificativa pode estar certo. Auditando caso a caso,
+encontrei o contrário em pelo menos dois:
+
+- **`CLI-005`** (regra: alto, agente: médio). O agente justificou citando "a operação de
+  **2024**-05-07 (R$ 409,16)" como o valor atípico. Dois erros verificáveis: (1) a data é
+  **2026**-05-07 — o ano foi alucinado; (2) muito pior, **R$ 409,16 não é a operação atípica** —
+  é um valor *abaixo* da mediana do cliente (R$ 2.144,18). As operações realmente sinalizadas
+  pela Regra 2 são `OP-00049` (R$ 11.988,17) e `OP-00043` (R$ 30.743,97). O agente construiu
+  todo o raciocínio sobre a operação errada e ainda assim produziu um parecer que *soa*
+  plausível. Aqui a **regra estava certa e o agente errado**.
+- **`CLI-017`** (regra: alto, agente: médio). O parecer é internamente inconsistente: descreve
+  "tentativa de dividir valores para evitar detecção" e nomeia a tipologia como **smurfing** —
+  e então classifica o risco como *médio*. Se a tipologia identificada é smurfing, "médio" não
+  se sustenta. A regra, que manda fracionamento direto para "alto", estava mais correta.
+- Na outra direção, **`CLI-030`** (regra: médio, agente: alto) me parece uma **escalada
+  legítima**: o agente observou que R$ 85.546,51 de um volume total de R$ 117.780,89 estão
+  concentrados em duas TEDs — concentração que a Regra 2, olhando operação a operação contra a
+  mediana, não captura.
+
+**A conclusão que levo desse exercício** é mais interessante do que "quem ganhou": a
+justificativa em linguagem natural é **persuasiva independentemente de estar correta**. Os
+pareceres de `CLI-005` e `CLI-017` são bem escritos, citam números e soam técnicos — e estão
+errados. Num fluxo real de PLD, isso é um risco operacional concreto: um analista humano lendo
+só o parecer não teria como perceber que a operação citada é a errada. É a evidência mais forte,
+em toda esta entrega, de por que a camada determinística não pode ser substituída pelo LLM —
+ela é o que permite auditar o modelo. Se eu tivesse mais tempo, a próxima peça que construiria
+seria justamente uma **verificação automática de aderência**: checar se os IDs/valores citados
+na `justificativa` existem de fato nas operações sinalizadas do cliente, e marcar o parecer como
+"não fundamentado" quando não existirem.
+
+**Achado colateral de robustez**: a justificativa de `CLI-028` veio com 4 caracteres Unicode
+invisíveis (U+200B, zero-width space) no meio do texto, truncando a frase visualmente. O JSON
+continuou válido e passou na validação Pydantic — ou seja, **validar schema não garante que o
+texto dentro dos campos está limpo**. Um pipeline de produção precisaria de sanitização de
+texto além da validação estrutural.
+
+**Nota sobre acentuação**: o enunciado especifica os níveis como `baixo/médio/alto`. O modelo
+alterna entre "medio" e "médio" de forma imprevisível, então o schema (`ParecerLLM`) aceita as
+duas grafias — rejeitar um parecer válido por acento seria perder informação — e a normalização
+para a forma do enunciado acontece no momento da comparação, em `confronto.py`.
 
 ## Nível 3
 

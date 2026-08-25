@@ -49,6 +49,25 @@
    lote de verdade, e exigiu ler o corpo do erro para descobrir que o conteúdo válido vinha em
    `failed_generation`. Rodar de verdade encontrou o que o planejamento não encontrou.
 
+5. **A IA escreveu documentação que os próprios resultados desmentiam — o erro mais sério.**
+   Numa primeira versão, o `README.md` e o `DECISOES.md` afirmavam que o agente "não chama
+   `operacoes_do_dia` para clientes sem fracionamento", como evidência de que ele decidia bem.
+   Ao rodar uma auditoria conferindo cada afirmação contra `outputs/pareceres_lote.json`,
+   descobri que era **o oposto**: 7 clientes sem fracionamento chamaram a ferramenta, e
+   `CLI-029` — que tem a flag — não chamou. A afirmação tinha sido escrita a partir de uma
+   única execução observada no começo, e generalizada sem verificação. Corrigi o texto e, ao
+   investigar a causa, encontrei um defeito real de desenho meu (o prompt informa a flag de
+   fracionamento sem informar a data que a disparou), que agora está documentado no
+   `DECISOES.md`. **Lição:** o risco maior de usar IA não foi ela escrever código errado — foi
+   ela escrever, de forma convincente, uma conclusão que eu não tinha verificado. Passei a
+   conferir toda afirmação de resultado contra os arquivos de saída antes de aceitá-la.
+
+6. **O LLM da solução também alucinou de forma persuasiva.** No confronto, o parecer de
+   `CLI-005` fundamenta o risco numa operação de R$ 409,16 (abaixo da mediana do cliente,
+   portanto não é a operação atípica) e erra o ano da data. O texto é bem escrito e soa
+   técnico. Isso reforçou a decisão de manter todo cálculo em pandas: é a camada determinística
+   que permite auditar o modelo e perceber esse tipo de erro.
+
 ## Sobre autoria e entendimento
 
 O código foi escrito em par com a IA, mas cada decisão ambígua do enunciado foi discutida e
