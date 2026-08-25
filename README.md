@@ -74,8 +74,11 @@ python nivel_3/comparar_transportes.py     # valida MCP vs. import direto
 
 ## Alguns achados da execução
 
-- O **prompt v1 do Nível 1 alucinou** um limite de "R$ 10.000" que não existe no enunciado — a
-  execução foi mantida no notebook como evidência de por que o cálculo deve ficar fora do LLM.
+- O **prompt v1 do Nível 1 é instável**, não simplesmente errado: executado duas vezes com o
+  mesmo texto e `temperature=0.2`, numa delas alucinou um limite de reporte de "≈ R$ 10.000" que
+  não existe no enunciado (o real é R$ 20.000,00) e na outra acertou. Por ser subespecificado,
+  ele deixa o modelo preencher a lacuna com conhecimento genérico. O v2 não tem essa lacuna
+  porque recebe o número já calculado. A execução original está no commit `9a59dd8`.
 - O modelo tenta, ocasionalmente, chamar uma **ferramenta fictícia chamada `JSON`** para devolver
   a resposta final, o que a API rejeita; o parecer válido vem dentro do corpo do erro e é
   recuperado de lá (`nivel_2/agente.py`).

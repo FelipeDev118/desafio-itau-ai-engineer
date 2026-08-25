@@ -1,12 +1,12 @@
 candidato: Luiz Felipe Alves de Oliveira
 modelo_usado: openai/gpt-oss-120b
 provedor: groq
-horas_dedicadas: 1
+horas_dedicadas: 2
 
 nivel_1:
   limpeza_dados:      {status: completo, onde: "nivel_1/nivel_1.ipynb, seção 'Parte A.2 — Diagnóstico de qualidade dos dados'"}
   regras_pandas:      {status: completo, onde: "nivel_1/nivel_1.ipynb, seção 'Parte A.5 — Regras determinísticas'"}
-  validacao_regras:   {status: parcial,  onde: "nivel_1/nivel_1.ipynb, seção 'Parte A.6 — Validação da Regra 1'", nota: "validei explicitamente a Regra 1 (caso positivo CLI-A-1 vs caso negativo CLI-A-3, com assert). A Regra 2 não tem célula de validação dedicada — só a listagem das operações sinalizadas."}
+  validacao_regras:   {status: completo, onde: "nivel_1/nivel_1.ipynb, seções 'Parte A.6 — Validação da Regra 1' e 'Parte A.6 (cont.) — Validação da Regra 2'", nota: "Regra 1: caso positivo CLI-A-1 vs caso parecido que não se enquadra CLI-A-3, com assert. Regra 2: caso positivo CLI-A-4 vs CLI-A-2 (valor alto em termos absolutos, porém típico para o próprio histórico) e CLI-A-3 (excluído pela guarda de 4+ operações após a limpeza), também com assert."}
   saida_estruturada:  {status: completo, onde: "nivel_1/nivel_1.ipynb, classe ParecerLLM (Pydantic) + função parsear_parecer, com tratamento de resposta malformada"}
   comparacao_prompts: {status: completo, onde: "nivel_1/nivel_1.ipynb, seções 'Prompt v1', 'Prompt v2' e 'Comparação entre as duas versões'"}
 

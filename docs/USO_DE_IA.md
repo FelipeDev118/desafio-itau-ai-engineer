@@ -35,7 +35,15 @@ motivo não era o MCP, era o LLM não ser determinístico. O critério estava er
 Troquei por comparar o **payload das ferramentas** (o que de fato deve ser invariante): 6/6
 idênticos. O erro rendeu o achado de auditabilidade descrito em [`ARQUITETURA.md`](ARQUITETURA.md).
 
-**4. O LLM da solução também alucina de forma persuasiva.** No confronto, o parecer de `CLI-005`
+**4. Quase documentei uma conclusão a partir de uma única execução.** Na primeira execução do
+notebook, o prompt v1 alucinou um limite de reporte de "≈ R$ 10.000" (o real é R$ 20.000,00), e
+eu escrevi a comparação de prompts tratando isso como característica fixa do v1. Ao reexecutar o
+notebook para adicionar a validação da Regra 2, **o mesmo prompt não repetiu o erro**. A
+conclusão correta não era "v1 alucina", era "v1 é **instável**" — por ser subespecificado, deixa
+o modelo preencher a lacuna do limite com conhecimento genérico, às vezes certo, às vezes não. A
+execução original está preservada no commit `9a59dd8`, e o notebook hoje compara as duas.
+
+**5. O LLM da solução alucina de forma persuasiva.** No confronto, o parecer de `CLI-005`
 fundamenta o risco numa operação de R$ 409,16 — abaixo da mediana do cliente, portanto não é a
 operação atípica — e erra o ano da data. O texto é bem escrito e soa técnico. É a razão pela qual
 todo cálculo ficou em pandas: a camada determinística é o que permite auditar o modelo.
