@@ -32,6 +32,13 @@ python lote.py         # roda o agente sobre os 10 clientes -> outputs/
 python confronto.py    # confronta regra vs. agente -> outputs/
 ```
 
+Nível 3 — MCP (a partir da raiz do projeto; o cliente sobe o servidor sozinho):
+
+```bash
+python nivel_3/agente_mcp.py --lote        # agente consumindo as tools por MCP
+python nivel_3/comparar_transportes.py     # valida MCP vs. import direto
+```
+
 ## Estrutura
 
 | Caminho | O que é |
@@ -42,6 +49,9 @@ python confronto.py    # confronta regra vs. agente -> outputs/
 | `nivel_2/agente.py` | Agente com function calling nativo — o modelo decide quais tools chamar. |
 | `nivel_2/lote.py` | Execução em lote sobre os 10 clientes mais sinalizados + métricas. |
 | `nivel_2/confronto.py` | Confronto entre `nivel_risco` do agente e as flags determinísticas. |
+| `nivel_3/mcp_server.py` | Servidor MCP (stdio) que republica as ferramentas do Nível 2. |
+| `nivel_3/agente_mcp.py` | Agente que consome as ferramentas por MCP, não por import direto. |
+| `nivel_3/comparar_transportes.py` | Valida que a troca de transporte preserva o comportamento. |
 | `outputs/` | Resultados salvos de todas as execuções. |
 | `docs/DECISOES.md` | Trade-offs, limitações e o que faria com mais tempo. |
 | `docs/USO_DE_IA.md` | Como usei IA e onde ela me levou ao caminho errado. |
@@ -56,8 +66,11 @@ python confronto.py    # confronta regra vs. agente -> outputs/
   agente com function calling nativo (usa 3 padrões distintos de ferramentas entre os 10
   clientes — só 6 dos 10 receberam as três), lote sobre os 10 clientes com registro de
   custo/latência, e confronto regra vs. modelo com análise das divergências.
-- **Nível 3 — não feito.** Trilha que escolheria (B, servidor MCP) e plano de ataque estão em
-  [`docs/DECISOES.md`](docs/DECISOES.md#nível-3).
+- **Nível 3 — completo (Trilha B).** As ferramentas do Nível 2 são expostas por um servidor MCP
+  local via stdio e consumidas pelo protocolo, com descoberta em runtime — o agente não tem mais
+  a lista de ferramentas hardcoded. Validado comparando as duas vias: payload das ferramentas
+  idêntico em 6/6 casos. Arquitetura e instruções de conexão em
+  [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md).
 
 ## Alguns achados da execução
 

@@ -19,5 +19,6 @@ nivel_2:
 
 nivel_3:
   trilha_escolhida: B
-  status: nao_feito
-  plano: "docs/DECISOES.md#nível-3"
+  status: completo
+  onde: "nivel_3/mcp_server.py (servidor MCP stdio), nivel_3/agente_mcp.py (agente consome via MCP, com descoberta de ferramentas em runtime), nivel_3/comparar_transportes.py (validacao); como conectar em docs/ARQUITETURA.md; saidas em outputs/pareceres_lote_mcp.json e outputs/comparacao_transportes.json"
+  nota: "As ferramentas do Nivel 2 sao expostas por servidor MCP local via stdio e consumidas pelo protocolo, nao por import direto. Validacao comparou as duas vias: payload das ferramentas identico em 6/6 casos e vocabulario de ferramentas identico."

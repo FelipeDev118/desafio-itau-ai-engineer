@@ -1,248 +1,309 @@
 # Decisões
 
-Este documento registra trade-offs, limitações e o que faria com mais tempo. Não é um relatório
-do que foi feito — isso o código mostra.
+O enunciado pede três coisas aqui — trade-offs, limitações e o que eu faria com mais tempo — e
+avisa que não quer relatório do que foi feito. O documento está organizado nessas três seções.
+O *o quê* está no código e nas saídas em `outputs/`; aqui está o *por quê*.
 
-## Contexto de tempo
+---
 
-O desafio foi recebido com prazo de entrega no mesmo dia (janela real de poucas horas em vez das
-24h nominais, por causa de quando cheguei a ele). Isso definiu a ordem de prioridade: **Nível 1
-sólido > Nível 2 sólido > Nível 3 só se sobrasse tempo**, em vez de tentar os três pela metade —
-seguindo a orientação explícita do próprio enunciado ("preferimos, com folga, dois níveis
-sólidos e bem documentados a três pela metade"). O Nível 3 não foi feito; ver seção própria
-abaixo.
+# 1. Trade-offs
 
-## Nível 1 — Tratamento de dados
+## Provedor e modelo: Groq / `openai/gpt-oss-120b`
 
-Três problemas de qualidade encontrados na base de 20 operações:
+**Contra**: Google AI Studio (Gemini) e Ollama local.
 
-1. **Duplicata exata** (`OP-0007`, linha idêntica repetida). Tratada com
-   `drop_duplicates(subset='id')`, porque um `id` de operação deveria ser único — indica erro
-   de extração do sistema legado, não duas operações reais.
-2. **Data nula** (`OP-0017`), com `observacao` explícita `"data nao capturada pelo sistema"`.
-   Decisão: **não descartar a linha** (valor e cliente são dados válidos), mas **excluí-la do
-   cálculo da Regra 1** (que depende de agrupar por data — não é seguro presumir uma data em
-   contexto de AML). Ela continua entrando em volume total, contagem por canal e na Regra 2
-   (que não depende de data). Alternativa descartada: imputar uma data — rejeitada por criar
-   dado artificial num contexto onde isso pode mascarar ou fabricar padrão.
-3. **Operação em USD** (`OP-0013`). Convertida para BRL com a taxa fixa do próprio arquivo
-   (`valor_brl = valor * taxa_cambio_usd_brl` quando `moeda == 'USD'`), sem consultar cotação
-   externa, conforme instruído.
+Descartei **Ollama** primeiro: rodar local elimina rate limit e questão de dados, mas os modelos
+que cabem numa máquina comum têm *function calling* frágil, e o Nível 2 depende inteiramente
+disso. Entre **Gemini** e **Groq**, escolhi Groq por latência (o lote de 10 clientes leva ~80s) e
+por expor uma API compatível com OpenAI, o que manteria o custo de troca de provedor baixo.
 
-A mesma lógica foi reaproveitada no Nível 2 (`nivel_2/dados.py`) sobre a base de ~320 operações,
-onde os mesmos três padrões aparecem em maior quantidade (5 duplicatas, 7 datas nulas, 7
-operações em USD) — nenhuma reescrita foi necessária, só encapsular em funções reutilizáveis.
+O preço dessa escolha apareceu: o free tier tem **8.000 tokens/minuto**, e o lote estourou o
+limite na primeira execução. Foi preciso implementar retry com backoff e espaçar as chamadas em
+8s. Com Gemini o limite é por requisição/minuto e não por token, o que teria sido mais folgado
+para este volume — em retrospecto, para um lote de 10 clientes com contexto grande, Gemini era a
+escolha melhor. Mantive Groq porque a troca no meio do caminho custaria mais que o retry.
 
-## Nível 1 — Regras determinísticas
+Nota: `llama-3.3-70b-versatile`, sugerido no enunciado, **não existe mais** nesta conta Groq.
+Descobri validando com `client.models.list()` antes de escrever o resto do código, e não
+confiando no nome. Por isso `requirements.txt` fixa versões: a API do pacote `mcp` também mudou
+entre 1.x e 2.x durante o desenvolvimento.
 
-- **Regra 1 (fracionamento)**: "ultrapassa R$ 50.000,00" tratado como estritamente `>`;
-  "nenhuma atinge R$ 20.000,00" tratado como `< 20000` (ou seja, uma operação de exatamente
-  R$ 20.000,00 já conta como "atingiu" e desqualifica o cliente da regra) — usei o limite como
-  já "consumido" no ponto exato, para não deixar ambíguo se R$ 20.000,00 exatos contam ou não.
-- **Regra 2 (valor atípico)**: aplicada só a clientes com 4+ operações, usando a mediana e o
-  limite de 5× sobre `valor_brl` (já convertido), não sobre o valor original — importante,
-  porque foi exatamente a conversão de moeda que revelou o outlier em `CLI-A-4` (Nível 1).
+## Agente na mão, sem framework
 
-## Nível 1 — Validação da Regra 1
+**Contra**: LangChain, LangGraph e PydanticAI, todos citados como opção no enunciado.
 
-Comparei `CLI-A-1` (3 operações no mesmo dia, soma R$ 54.200,00, nenhuma isolada ≥ R$ 20.000,00
-→ **deve** sinalizar) com `CLI-A-3` (mesmo padrão superficial — 3 operações no mesmo dia — mas
-soma R$ 48.500,00 após remover a duplicata de `OP-0007` → **não deve** sinalizar). O caso
-`CLI-A-3` também mostra por que a deduplicação da Parte A.2 importa: sem ela, a soma ficaria em
-R$ 65.700,00 e o cliente seria falsamente sinalizado.
+Escrevi o loop de *function calling* diretamente sobre o SDK. O argumento a favor do framework é
+real: LangGraph me daria estado, retry e observabilidade de graça. Recusei por dois motivos.
 
-## Nível 1 — LLM
+O primeiro é que o enunciado diz que a entrevista vai cobrar que eu explique as decisões do meu
+próprio código — e um `AgentExecutor` esconde exatamente a parte que está sendo avaliada (como o
+modelo decide, o que volta no `tool_calls`, o que acontece quando a resposta não presta). O
+segundo é que o loop tem ~40 linhas; o framework seria mais código de configuração que de
+lógica.
 
-- Provedor/modelo: Groq, `openai/gpt-oss-120b` (gratuito, function calling nativo, latência
-  baixa). `llama-3.3-70b-versatile`, sugerido no enunciado, não está mais disponível nesta conta
-  Groq — os modelos livres mudaram; validei via `client.models.list()` antes de seguir.
-- **Achado real da comparação de prompts** (não hipotético — aconteceu na execução salva no
-  notebook): o **prompt v1** (genérico, sem contexto de negócio) fez o modelo **alucinar** um
-  limite de "R$ 10.000" que não existe em lugar nenhum do enunciado (o limite real é
-  R$ 20.000,00) e descrever incorretamente a contagem de operações. O **prompt v2** (papel de
-  analista PLD definido, flags determinísticas fornecidas explicitamente como fato, instrução
-  de nunca recalcular) citou os números corretos porque eles foram **dados**, não inferidos. A
-  lição: o ganho não veio de um prompt "mais bonito", veio de não pedir ao modelo para
-  reconstruir contexto numérico sozinho — mesmo princípio de separação regra/LLM, aplicado
-  dentro do próprio prompt.
-- Resposta malformada: tratada via `re.search` de bloco `{...}` + `json.loads` + validação
-  Pydantic (`ParecerLLM`); qualquer falha em qualquer etapa retorna `(None, motivo_do_erro)` em
-  vez de lançar exceção.
+Isso se pagou na prática. Dois bugs reais só foram tratáveis porque eu tinha o loop na mão:
 
-## Nível 2 — Regras em escala
+- O modelo às vezes tenta chamar uma ferramenta **fictícia chamada `JSON`** para devolver a
+  resposta final, e a API rejeita com `400 tool_use_failed`. O conteúdo válido vem dentro do
+  corpo do erro, em `failed_generation` — recupero de lá
+  (`_extrair_parecer_de_erro_tool_json`). Dentro de um framework, isso teria estourado como
+  exceção opaca.
+- O retry de rate limit precisou ler o `retry-after` da resposta.
 
-Nenhuma reescrita foi necessária — `nivel_2/dados.py` reaproveita literalmente as mesmas funções
-do Nível 1 (só extraídas do notebook para módulo importável). Isso só foi possível porque desde
-o início tratei o Nível 1 com funções puras sobre DataFrame em vez de código solto em células.
+**O que perdi**: não tenho tracing estruturado nem retry configurável por política — reimplementei
+à mão versões simplórias das duas coisas.
 
-**Critério de "sinalização" no ranking dos 10 mais sinalizados**: cada cliente com
-`flag_fracionamento=True` conta 1 sinalização; cada **operação individual** com
-`flag_valor_atipico=True` conta 1 sinalização (um cliente pode ter várias operações atípicas).
-Desempate por `volume_total_brl`. Alternativa descartada: contar fracionamento e valor atípico
-igualmente como "1 por cliente" — rejeitada porque um cliente com 3 operações atípicas parece,
-na prática, mais preocupante que um com 1 só, e o enunciado não define isso, então documentei a
-escolha aqui em vez de arbitrar silenciosamente.
+## Data nula: excluir da Regra 1, manter no resto
 
-## Nível 2 — Agente e ferramentas
+**Contra**: descartar a linha inteira, ou imputar uma data.
 
-Optei por **function calling nativo** do modelo (via API compatível com OpenAI que o Groq
-expõe) em vez de um roteador condicional escrito à mão, porque é o próprio LLM que decide, turno
-a turno, quais ferramentas chamar — o enunciado é explícito que "chamar todas sempre não é um
-agente, é um script", e queria que a decisão fosse realmente do modelo, não uma condicional
-`if flag_fracionamento: chamar(...)` disfarçada de agente.
+7 operações no Nível 2 (1 no Nível 1) têm `data: null`, com `observacao` dizendo *"data nao
+capturada pelo sistema"* — o próprio dado admite falha de captura.
 
-**O que a execução real mostrou** (conferido em `outputs/pareceres_lote.json`, não presumido):
-o agente usou **três padrões distintos** de ferramentas entre os 10 clientes — sempre
-`historico_cliente` como base, e depois variando: 6 clientes receberam as três ferramentas,
-2 receberam `historico_cliente` + `operacoes_do_dia`, e 2 receberam `historico_cliente` +
-`perfil_canal`. Ou seja, ele de fato **não chama tudo sempre** (só 6 de 10 casos usaram as três).
+**Imputar** (média do cliente, data vizinha) foi rejeitado por ser perigoso no domínio: a Regra 1
+agrupa por data, então inventar uma data pode **fabricar** um fracionamento que não existiu ou
+**mascarar** um real. Em PLD, errar para o lado de "inventei um padrão" é pior que perder um caso.
 
-**Porém, a seleção não é bem direcionada — e a causa é um defeito meu de desenho do prompt.**
-Eu esperava que clientes com `flag_fracionamento` fossem justamente os que disparariam
-`operacoes_do_dia` (a ferramenta de recorte diário). Aconteceu quase o contrário: 7 dos clientes
-**sem** fracionamento chamaram `operacoes_do_dia`, e `CLI-029` — que **tem** a flag de
-fracionamento, o caso onde olhar o dia é mais justificado — **não chamou**. Investigando, a
-causa é clara: o prompt informa ao agente *que* a flag de fracionamento está ativa, mas **não
-informa em qual data** o fracionamento ocorreu. Sem a data, o agente não tem o que passar para
-`operacoes_do_dia` — as únicas datas visíveis para ele são `data_min`/`data_max` do
-`historico_cliente`, que não são as datas relevantes. A ferramenta existe, mas o agente foi
-posto numa situação em que não consegue usá-la no caso certo.
+**Descartar a linha** foi rejeitado porque `valor`, `cliente_id` e `canal` são válidos — jogar
+fora distorceria volume total e perfil de canal sem necessidade.
 
-**Correção que faria** (não aplicada por falta de tempo hábil antes do prazo): incluir no prompt
-as datas específicas que dispararam a Regra 1 (já são calculadas em `flag_fracionamento()`, em
-`dados.py` — a coluna `data` do DataFrame de candidatos), transformando a flag de um booleano em
-`{"flag_fracionamento": true, "datas": ["2026-03-08"]}`. A validação seria reexecutar o lote e
-verificar se os clientes com fracionamento passam a chamar `operacoes_do_dia` **nas datas
-sinalizadas** — hoje isso não acontece, e é uma limitação real desta entrega, não um detalhe.
+A escolha foi separar por regra: a operação sai só do cálculo que **depende de data** (Regra 1) e
+permanece em tudo que não depende (volume, canal, Regra 2). O custo é que a Regra 1 tem um ponto
+cego declarado — se o fracionamento real aconteceu justamente nessas operações, não é detectado.
 
-**Bug de API encontrado e contornado**: o modelo `openai/gpt-oss-120b` via Groq eventualmente
-tenta "chamar" uma ferramenta fictícia chamada `JSON` para devolver a resposta final (em vez de
-simplesmente responder em texto), o que a API rejeita com `400 tool_use_failed`. O conteúdo
-gerado, porém, vem embutido no próprio corpo do erro (`failed_generation`). Implementei
-`_extrair_parecer_de_erro_tool_json` em `nivel_2/agente.py` para recuperar o parecer desse
-campo em vez de deixar a chamada quebrar — isso é tratamento de resposta malformada na prática,
-não só na teoria do enunciado.
+## Deduplicação por `id`
 
-**Rate limit**: o free tier do Groq tem limite de tokens/minuto (8.000 TPM nesta conta), e o
-lote de 10 clientes estourou esse limite na primeira tentativa. Implementei retry com backoff
-(`_chat_com_retry`) e espaçamento de 8s entre clientes no `lote.py`. Não implementei cache de
-respostas (sugerido no enunciado) por falta de tempo — ver "o que faria com mais tempo".
+Assumi que `id` de operação é único e que repetição é erro de extração do legado. É a hipótese
+mais provável (as linhas são **idênticas** em todos os campos), e a validação da Regra 1 mostra
+por que importa: sem deduplicar, `CLI-A-3` somaria R$ 65.700,00 em vez de R$ 48.500,00 e seria
+**falsamente sinalizado**. A hipótese contrária — dois eventos reais com mesmo id — implicaria um
+sistema de origem tão quebrado que a análise inteira seria inconfiável. Ver limitação
+correspondente na seção 2.
 
-## Nível 2 — Confronto regra vs. modelo
+## Limite da Regra 1: `< 20.000` para "não atingir"
 
-**Primeiro critério, descartado.** Comecei com "ambas as flags ativas → alto; apenas uma →
-médio". Ao auditar o resultado, percebi que ele é **degenerado nesta base**: nenhum dos 10
-clientes dispara as duas regras ao mesmo tempo, então o ramo "alto" nunca é exercido e todos os
-10 casos esperam "médio". A taxa de concordância viraria uma métrica vazia — ela mediria apenas
-"com que frequência o agente diz médio", não o alinhamento entre regra e modelo. Registro o
-descarte porque o raciocínio importa mais que o número final.
+O enunciado diz "nenhuma operação isolada **atinge** R$ 20.000,00". Tratei R$ 20.000,00 exatos
+como **já atingido** (desqualifica), e "ultrapassa R$ 50.000,00" como estritamente `>`. É a
+leitura literal de "atingir"; a alternativa (`<= 20.000` ainda passa) alargaria a regra sem base
+no texto. Nenhuma operação da base cai exatamente no limite, então a escolha não muda o resultado
+aqui — mas mudaria com dados reais, e por isso está registrada.
 
-**Critério adotado**, baseado na *intensidade* da sinalização e não em "quantas regras
-distintas dispararam":
+## Ranking: contar operações atípicas, não regras acionadas
 
-| Condição determinística | `nivel_risco` esperado |
+**Contra**: cada regra conta 1 por cliente, independentemente de quantas operações disparou.
+
+Adotei: fracionamento conta 1 (é um padrão do cliente), e **cada operação** atípica conta 1.
+Um cliente com 3 operações atípicas é materialmente mais preocupante que um com 1 — tratar os
+dois como "1 sinalização" descartaria informação que a regra já produziu. O enunciado não define
+isso, então documento em vez de arbitrar em silêncio.
+
+## Critério do confronto: intensidade, não coincidência de regras
+
+**Contra**: "ambas as flags ativas → alto" (foi meu primeiro critério, e eu o descartei).
+
+Ao auditar, percebi que o primeiro critério é **degenerado nesta base**: nenhum dos 10 clientes
+dispara as duas regras ao mesmo tempo, então o ramo "alto" nunca seria exercido e os 10 casos
+esperariam "médio". A taxa de concordância mediria apenas "com que frequência o agente diz
+médio". Registro o descarte porque o raciocínio vale mais que o número.
+
+Critério final:
+
+| Condição determinística | esperado |
 |---|---|
-| `flag_fracionamento` ativa **ou** 2+ operações com valor atípico | `alto` |
+| `flag_fracionamento` ativa **ou** 2+ operações atípicas | `alto` |
 | exatamente 1 operação atípica, sem fracionamento | `médio` |
 
-Fracionamento vai direto para "alto" porque é um padrão **intencional** (structuring), não um
-outlier estatístico; e 2+ operações atípicas indicam recorrência, não um evento isolado. Isso
-exercita os dois ramos (6 casos esperam "alto", 4 esperam "médio").
+Fracionamento vai direto para "alto" porque é padrão **intencional** (structuring), não outlier
+estatístico. Resultado: **50% de concordância (5/10)**, com divergências nas duas direções.
 
-**Resultado** (`outputs/confronto_regra_vs_agente.csv`): concordância de **50% (5/10)**, com
-divergências **nas duas direções** — 4 casos em que o agente foi mais conservador que a regra e
-1 em que foi mais severo. Isso é mais informativo que o critério anterior, onde toda divergência
-apontava para o mesmo lado.
+### A análise das divergências não deu o resultado que eu esperava
 
-**Análise das divergências — e aqui a resposta não é "o agente estava certo".** O enunciado
-sugere que um agente que discorda com boa justificativa pode estar certo. Auditando caso a caso,
-encontrei o contrário em pelo menos dois:
+O enunciado sugere que um agente que discorda com boa justificativa pode estar certo. Conferindo
+caso a caso contra os dados, encontrei o contrário em dois:
 
-- **`CLI-005`** (regra: alto, agente: médio). O agente justificou citando "a operação de
-  **2024**-05-07 (R$ 409,16)" como o valor atípico. Dois erros verificáveis: (1) a data é
-  **2026**-05-07 — o ano foi alucinado; (2) muito pior, **R$ 409,16 não é a operação atípica** —
-  é um valor *abaixo* da mediana do cliente (R$ 2.144,18). As operações realmente sinalizadas
-  pela Regra 2 são `OP-00049` (R$ 11.988,17) e `OP-00043` (R$ 30.743,97). O agente construiu
-  todo o raciocínio sobre a operação errada e ainda assim produziu um parecer que *soa*
-  plausível. Aqui a **regra estava certa e o agente errado**.
-- **`CLI-017`** (regra: alto, agente: médio). O parecer é internamente inconsistente: descreve
-  "tentativa de dividir valores para evitar detecção" e nomeia a tipologia como **smurfing** —
-  e então classifica o risco como *médio*. Se a tipologia identificada é smurfing, "médio" não
-  se sustenta. A regra, que manda fracionamento direto para "alto", estava mais correta.
-- Na outra direção, **`CLI-030`** (regra: médio, agente: alto) me parece uma **escalada
-  legítima**: o agente observou que R$ 85.546,51 de um volume total de R$ 117.780,89 estão
-  concentrados em duas TEDs — concentração que a Regra 2, olhando operação a operação contra a
-  mediana, não captura.
+- **`CLI-005`** (regra: alto · agente: médio). O parecer fundamenta o risco em *"a operação de
+  **2024**-05-07 (R$ 409,16)"*. Dois erros verificáveis: o ano é **2026**, e — muito pior —
+  **R$ 409,16 não é a operação atípica**, é um valor *abaixo* da mediana do cliente
+  (R$ 2.144,18). As operações realmente sinalizadas são `OP-00049` (R$ 11.988,17) e `OP-00043`
+  (R$ 30.743,97). O agente raciocinou sobre a operação errada e mesmo assim produziu um parecer
+  que **soa** plausível. A regra estava certa, o agente errado.
+- **`CLI-017`** (regra: alto · agente: médio). O parecer nomeia a tipologia como **smurfing** e
+  então classifica o risco como *médio* — internamente inconsistente.
+- Na direção oposta, **`CLI-030`** (regra: médio · agente: alto) é escalada **legítima**: o
+  agente notou que R$ 85.546,51 de R$ 117.780,89 estão concentrados em duas TEDs, concentração
+  que a Regra 2, comparando operação a operação contra a mediana, não captura.
 
-**A conclusão que levo desse exercício** é mais interessante do que "quem ganhou": a
-justificativa em linguagem natural é **persuasiva independentemente de estar correta**. Os
-pareceres de `CLI-005` e `CLI-017` são bem escritos, citam números e soam técnicos — e estão
-errados. Num fluxo real de PLD, isso é um risco operacional concreto: um analista humano lendo
-só o parecer não teria como perceber que a operação citada é a errada. É a evidência mais forte,
-em toda esta entrega, de por que a camada determinística não pode ser substituída pelo LLM —
-ela é o que permite auditar o modelo. Se eu tivesse mais tempo, a próxima peça que construiria
-seria justamente uma **verificação automática de aderência**: checar se os IDs/valores citados
-na `justificativa` existem de fato nas operações sinalizadas do cliente, e marcar o parecer como
-"não fundamentado" quando não existirem.
+**A conclusão que levo é sobre a forma, não o placar**: a justificativa em linguagem natural é
+persuasiva *independentemente de estar correta*. Os pareceres errados são bem escritos, citam
+números e soam técnicos. Num fluxo real, um analista lendo só o parecer não teria como perceber
+que a operação citada é a errada. É o argumento mais concreto desta entrega a favor de manter a
+camada determinística: ela é o que torna o modelo **auditável**.
 
-**Achado colateral de robustez**: a justificativa de `CLI-028` veio com 4 caracteres Unicode
-invisíveis (U+200B, zero-width space) no meio do texto, truncando a frase visualmente. O JSON
-continuou válido e passou na validação Pydantic — ou seja, **validar schema não garante que o
-texto dentro dos campos está limpo**. Um pipeline de produção precisaria de sanitização de
-texto além da validação estrutural.
+## Nível 3: Trilha B (MCP)
 
-**Nota sobre acentuação**: o enunciado especifica os níveis como `baixo/médio/alto`. O modelo
-alterna entre "medio" e "médio" de forma imprevisível, então o schema (`ParecerLLM`) aceita as
-duas grafias — rejeitar um parecer válido por acento seria perder informação — e a normalização
-para a forma do enunciado acontece no momento da comparação, em `confronto.py`.
+**Contra**: Trilha A (multiagente) e Trilha C (interface conversacional).
 
-## Nível 3
+Escolhi B porque as três ferramentas já eram funções puras e sem estado — expô-las via MCP é
+troca de *transporte*, não redesenho de lógica, e cabia no tempo restante. A Trilha A exigiria
+inventar critérios de parada e estado compartilhado (mais superfície para fazer mal-feito), e a
+C entrega principalmente UI, que não é onde este desafio está sendo avaliado.
 
-Não implementado, por falta de tempo (prazo bateu no mesmo dia do recebimento do desafio).
-**Trilha que escolheria**: B (Servidor MCP local), porque as três ferramentas do Nível 2 já são
-funções puras e stateless (`nivel_2/tools.py`) — expô-las via MCP seria principalmente um
-wrapper fino sobre o que já existe, sem precisar redesenhar a lógica de negócio, e é a trilha
-mais alinhada com "engenharia de agentes" no sentido estrito (separar quem expõe a ferramenta de
-quem a consome). **Como atacaria**: usar o SDK oficial de MCP em Python, criar um servidor stdio
-que expõe `historico_cliente`, `operacoes_do_dia` e `perfil_canal` como tools MCP com os mesmos
-schemas já definidos em `nivel_2/agente.py` (`TOOLS_OPENAI_SCHEMA`, adaptado ao formato MCP), e
-trocar a chamada direta em `_executar_tool` por uma chamada MCP via cliente stdio. **Como
-validaria**: reexecutar `nivel_2/lote.py` apontando para o cliente MCP em vez do import direto e
-comparar se os resultados (parecer, tools chamadas) são idênticos aos já salvos em
-`outputs/pareceres_lote.json` — se forem, a troca de transporte não alterou o comportamento do
-agente, só a forma de acesso às ferramentas.
+Detalhes de arquitetura e conexão em [`ARQUITETURA.md`](ARQUITETURA.md). O trade-off relevante:
+**abri mão de simplicidade** (dois processos, protocolo no meio, latência de IPC) em troca de uma
+fronteira real entre quem expõe a ferramenta e quem a consome, e de descoberta em runtime — o
+agente não tem mais a lista de ferramentas hardcoded.
 
-## Limitações conhecidas
+## Nível 1 em funções puras, não em células soltas
 
-- **Sem cache de respostas do LLM**: cada execução do lote refaz todas as chamadas, mesmo para
-  clientes já processados. Com mais tempo, cachear por `(cliente_id, hash_das_flags)` em disco
-  (ex.: SQLite ou arquivo JSON local) evitaria reprocessar em reexecuções e economizaria tokens
-  no free tier.
-- **Regras determinísticas simples por desenho** (como o próprio enunciado avisa): Regra 1 não
-  considera operações em datas adjacentes (ex.: fracionar em 2 dias em vez de 1 escaparia da
-  regra); Regra 2 não considera sazonalidade nem crescimento legítimo do negócio do cliente ao
-  longo do tempo — um cliente cujo volume médio de operações sobe estruturalmente teria
-  operações recentes marcadas como "atípicas" mesmo sem nada suspeito.
-- **Function calling depende de um provedor específico** (testado só no Groq/gpt-oss). Trocar de
-  provedor pode exigir ajuste no formato do schema de tools ou no tratamento de erros (o bug do
-  "tool JSON fictício" é específico deste modelo).
-- **Sem teste automatizado** (pytest) para `dados.py`/`tools.py`/`agente.py` — as validações que
-  existem são as células de notebook e os `print`/`assert` inline nos scripts, não uma suíte
-  formal. Com mais tempo, adicionaria testes unitários para as duas regras determinísticas
-  (casos extremos: exatamente R$ 20.000,00, exatamente 3 operações, cliente com exatamente 4
-  operações) e um teste de integração do agente com um mock do cliente Groq.
-- **Custo/latência não agregados com mais granularidade**: registramos tokens e latência por
-  chamada e por cliente, mas não separamos custo do turno de decisão (tool calling) do custo do
-  turno de resposta final — útil para otimizar o prompt do turno mais caro.
+Escrever o Nível 1 como funções sobre DataFrame custou mais que empilhar código em células. Pagou
+no Nível 2: `nivel_2/dados.py` reaproveitou a limpeza e as duas regras **sem reescrita** — só
+extraiu do notebook para módulo importável. Era a pergunta que o enunciado faz na Parte A do
+Nível 2, e a resposta é que não mudaria nada nessa decisão.
 
-## O que faria com mais tempo
+---
 
-- Cache de respostas do LLM (chave = hash do prompt + dados de entrada), para não requeimar
-  tokens do free tier em reexecuções e permitir rodar o lote sobre os 30 clientes, não só os 10
-  mais sinalizados.
-- Trilha B do Nível 3 (servidor MCP), como descrito acima.
-- Testes unitários para as regras determinísticas e um teste de integração do agente com
-  respostas mockadas do LLM (sem depender de rede/rate-limit para rodar o CI).
-- Revisar a Regra 1 para considerar janelas de mais de um dia (fracionamento distribuído em
-  dias consecutivos), documentando que isso é uma extensão da regra original, não parte do
-  enunciado.
+# 2. Limitações — onde isso quebra com dados reais
+
+## Enviar dados de cliente para uma API externa não sobreviveria a um banco
+
+É a limitação mais séria e não é técnica. Os dados aqui são sintéticos e anônimos
+(`CLI-014`, "Alfa Comercio LTDA"). Numa base real haveria nome, CPF/CNPJ e contrapartes
+identificáveis, e o pipeline **envia esse conteúdo para a API de um terceiro** a cada parecer.
+Isso não passa por LGPD nem por política de segurança da informação de uma instituição
+financeira. A arquitetura teria que mudar: modelo hospedado no perímetro do banco, ou
+pseudonimização antes do envio com re-identificação só do lado de cá. Nada nesta entrega trata
+disso.
+
+## As ferramentas releem a base inteira a cada chamada
+
+`tools.py` chama `carregar_e_limpar()` **e** `aplicar_regras()` a cada invocação — ou seja, lê o
+JSON inteiro e recalcula todas as regras de todos os clientes para responder sobre **um**. No
+lote foram **26 chamadas de ferramenta = 26 releituras completas**. Com 322 operações são 35 ms
+e ninguém percebe; com o volume real de um banco isso não roda. A correção não é micro-otimização
+e sim mudar a fronteira: as ferramentas deveriam consultar um *store* já materializado
+(banco de dados com índice por `cliente_id` e por data), não reprocessar o arquivo bruto.
+
+## O parecer não é reproduzível — e em PLD isso é problema de compliance
+
+A comparação entre transportes (Nível 3) expôs isto sem que eu procurasse: **o mesmo agente, com
+as mesmas ferramentas e os mesmos dados, atribuiu `nivel_risco` diferente para 4 de 10 clientes
+entre duas execuções**. `CLI-014` saiu `alto` numa e `médio` na outra, com `temperature=0.2`.
+
+Uma classificação de risco precisa ser auditável: um analista tem que poder explicar por que o
+cliente foi classificado como alto risco *naquela data*, e reexecutar deveria chegar ao mesmo
+lugar. Não chega. Ver a correção proposta na seção 3.
+
+## Pressupostos das regras que dados reais violam
+
+- **Regra 1 olha um único dia.** Fracionar em dois dias consecutivos escapa inteiramente. É a
+  evasão mais óbvia contra essa regra, e ela é trivial de executar.
+- **Regra 2 usa a mediana do próprio cliente**, o que a torna instável para clientes com poucas
+  operações (o mínimo aqui são 4) e cega para crescimento legítimo do negócio: um cliente cujo
+  faturamento sobe estruturalmente passa a ter operações marcadas como atípicas sem nada de
+  errado. Também não há noção de sazonalidade.
+- **Nenhuma das duas olha a rede**: contraparte compartilhada entre clientes, ciclos de
+  ida-e-volta, cadeias de transferência. É onde estão as tipologias que importam de verdade, e é
+  fora do alcance de regra por cliente isolado.
+- **`id` único** é hipótese, não garantia. Sistemas legados reais reciclam identificadores; se
+  isso acontecer, minha deduplicação **apaga operações legítimas** silenciosamente. Com dados
+  reais eu deduplicaria por chave composta (`id` + `data` + `valor` + `contraparte`) e emitiria
+  alerta em vez de remover em silêncio.
+- **Câmbio fixo**, conforme instruído. Real exigiria taxa da data de cada operação — uma remessa
+  de 2026-03 e outra de 2026-05 convertidas pela mesma taxa distorcem comparação de valores. Sem
+  isso, a Regra 2 pode marcar como atípica uma operação que só parece grande pelo câmbio.
+
+## Validar schema não garante conteúdo íntegro
+
+O parecer de `CLI-028` veio com 4 caracteres Unicode invisíveis (U+200B) no meio da
+justificativa, truncando a frase visualmente. O JSON era válido e passou pelo Pydantic. Validação
+estrutural não substitui sanitização de texto.
+
+## Outras
+
+- **Sem testes automatizados.** O que existe são `assert`s no notebook e inspeção manual — não
+  uma suíte. Para código que decide encaminhar cliente a análise humana, isso é pouco.
+- **Acoplado a um provedor.** O tratamento do bug da "tool `JSON`" é específico do
+  `gpt-oss` via Groq; trocar de provedor exige revisitar essa parte.
+- **Custo medido por cliente, não por chamada.** Agrego os turnos, então não sei qual turno
+  (decisão vs. redação) consome mais — que é exatamente o que eu precisaria para otimizar.
+- **Só os 10 mais sinalizados passam pelo agente**, por causa do rate limit; os outros 20
+  clientes não recebem parecer.
+
+---
+
+# 3. O que faria com mais tempo
+
+## Verificação de aderência do parecer aos dados (prioridade 1)
+
+O problema do `CLI-005` — parecer bem escrito fundamentado na operação errada — é o mais grave
+que encontrei, porque passa despercebido por revisão humana.
+
+**Arquitetura**: uma etapa de *grounding check* determinística entre o agente e a gravação do
+parecer. Ela extrai da `justificativa` toda referência verificável (IDs de operação, valores em
+R$, datas) e confere contra as operações reais daquele cliente; o parecer só é aceito se as
+referências existirem, e é marcado como `nao_fundamentado` caso contrário.
+
+**Ferramenta**: regex para extrair valores/datas/IDs + comparação contra o DataFrame já em
+memória. Deliberadamente **sem LLM** — usar um modelo para auditar outro reintroduz o problema.
+
+**Como validaria**: `CLI-005` é o caso de teste pronto. A verificação tem que reprovar o parecer
+que cita R$ 409,16 (valor existe, mas não está entre as operações sinalizadas) e aprovar o de
+`CLI-030`, que cita R$ 85.546,51 corretamente. Mediria falsos positivos rodando sobre os 10
+pareceres e conferindo à mão.
+
+## Reprodutibilidade do parecer
+
+**Arquitetura**: `temperature=0` e `seed` fixo quando o provedor suportar — mas isso é paliativo.
+A correção de verdade é **tratar o parecer como artefato imutável**: persistir cada parecer com o
+hash da entrada (dados + flags + versão do prompt + modelo) que o gerou. A decisão de risco vira
+registro histórico datado, não função recalculável que pode responder diferente amanhã.
+
+**Ferramenta**: SQLite com `hash_entrada` como chave — resolve de uma vez a reprodutibilidade e o
+cache que o enunciado sugere, já que parecer existente para o mesmo hash é reaproveitado em vez
+de repedido.
+
+**Como validaria**: rodar o lote duas vezes seguidas e exigir 10/10 idênticos — hoje dá 6/10. E
+alterar um único valor da base para confirmar que o hash muda e o parecer é regerado (senão o
+cache estaria mascarando dado novo).
+
+## Corrigir o prompt do agente para informar a data do fracionamento
+
+Auditando as saídas descobri que **o agente não usa `operacoes_do_dia` nos casos de
+fracionamento**, que é justamente onde ela serve: 7 clientes *sem* a flag chamaram a ferramenta e
+`CLI-029`, que *tem* a flag, não chamou. A causa é um defeito meu de desenho — o prompt informa
+*que* a flag está ativa, mas **não em qual data**, e sem data não há o que passar para a
+ferramenta.
+
+**Arquitetura**: trocar o booleano por `{"flag_fracionamento": true, "datas": ["2026-03-08"]}`. As
+datas já são calculadas em `flag_fracionamento()` (`dados.py`), só não são propagadas.
+
+**Como validaria**: reexecutar o lote e exigir que **todo** cliente com fracionamento chame
+`operacoes_do_dia` em pelo menos uma das datas sinalizadas — hoje isso é 0%. É verificável
+direto em `outputs/pareceres_lote.json`, sem julgamento subjetivo.
+
+## Testes automatizados das regras
+
+**Arquitetura**: `pytest` sobre os limites, que é onde regra de negócio quebra — operação de
+exatamente R$ 20.000,00, soma de exatamente R$ 50.000,00, cliente com exatamente 4 operações,
+cliente com data nula em todas. Mais um teste do agente com o cliente Groq mockado, para rodar
+sem rede nem rate limit.
+
+**Como validaria**: os casos-limite são construídos à mão com resultado esperado conhecido — o
+teste falha se alguém mudar `>` para `>=`. Hoje nada me protege disso.
+
+## Regra 1 com janela deslizante
+
+**Arquitetura**: janela de 3 dias corridos em vez de dia calendário, via `rolling` sobre a série
+diária por cliente. Fica explícito que é **extensão** da regra do enunciado, não a regra pedida —
+por isso conviveria com a original em vez de substituí-la, para não invalidar a comparação.
+
+**Como validaria**: a regra estendida tem que capturar tudo que a original captura (superconjunto
+verificável por assert) e o delta tem que ser inspecionado à mão — janela maior gera mais falso
+positivo, e o número só é aceitável se for revisável pela mesa.
+
+## Cobrir os 30 clientes
+
+Hoje só os 10 mais sinalizados recebem parecer, por rate limit. Com o cache por hash acima, mais
+processamento em fila respeitando o TPM, o lote completo roda — inclusive para reavaliar se
+clientes **não** sinalizados pelas regras teriam sido pegos pelo agente, que é o falso negativo
+que nenhuma métrica atual mede.

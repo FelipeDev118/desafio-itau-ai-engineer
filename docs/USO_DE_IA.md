@@ -1,78 +1,44 @@
 # Uso de IA
 
-## Ferramentas usadas
+## Ferramentas
 
-- **Claude Code (Anthropic)** — usado como par de programação ao longo de todo o
-  desenvolvimento, em sessão interativa no terminal.
-- **Groq / `openai/gpt-oss-120b`** — este é o LLM *da solução* (não de desenvolvimento): é ele
-  que produz os pareceres no Nível 1 Parte B e no agente do Nível 2.
+- **Claude Code (Anthropic)** — par de programação durante todo o desenvolvimento: estruturação
+  do repositório, implementação em pandas, agente, servidor MCP e redação dos documentos.
+- **Groq / `openai/gpt-oss-120b`** — não é ferramenta de desenvolvimento, é o LLM **da solução**:
+  produz os pareceres do Nível 1 Parte B e do agente.
 
-## Para quê usei
+Cada decisão ambígua do enunciado foi discutida antes de implementar; as justificativas estão em
+[`DECISOES.md`](DECISOES.md).
 
-- Estruturação inicial do repositório a partir do enunciado (pastas, `requirements.txt`,
-  `.gitignore`, `.env.example`).
-- Implementação do tratamento de dados e das duas regras determinísticas em pandas, discutindo
-  antes cada decisão ambígua (como tratar data nula, se `R$ 20.000,00` exatos "atingem" o
-  limite, como contar sinalizações no ranking).
-- Desenho dos dois prompts do Nível 1 e do schema Pydantic de validação.
-- Implementação do agente com function calling nativo, das três ferramentas e do script de
-  confronto.
-- Redação da documentação (`DECISOES.md`, este arquivo, `README.md`), a partir do que de fato
-  foi executado — não de um plano hipotético.
+## Onde a IA me levou para o caminho errado
 
-## Onde a IA me levou (ou quase me levou) para o caminho errado
+**1. Documentação convincente que os próprios resultados desmentiam — o pior dos casos.**
+O `README.md` e o `DECISOES.md` afirmavam, como prova de que o agente decidia bem, que ele "não
+chama `operacoes_do_dia` para clientes sem fracionamento". Rodei uma auditoria conferindo cada
+afirmação contra `outputs/pareceres_lote.json` e era **o oposto**: 7 clientes sem a flag chamaram
+a ferramenta, e o único com a flag não chamou. A frase tinha sido escrita a partir de uma
+execução isolada e generalizada sem verificação.
 
-1. **Modelo sugerido que não existe mais.** A primeira tentativa de configuração usou
-   `llama-3.3-70b-versatile` (modelo sugerido no próprio enunciado e o "default" que a IA
-   assumiu). A chamada falhou com `404 model_not_found` — os modelos gratuitos do Groq mudaram.
-   Só descobri porque testei a conexão com a API **antes** de escrever o resto do código, em vez
-   de confiar no nome do modelo. Corrigi listando os modelos realmente disponíveis na conta
-   (`client.models.list()`) e escolhendo `openai/gpt-oss-120b`. Lição: nome de modelo em
-   documentação (ou na memória de um LLM) envelhece rápido; verificar contra a API é barato.
+Foi o erro mais sério porque não era código quebrado — era uma conclusão plausível e bem escrita
+que eu quase entreguei. Investigar a causa revelou um defeito real de desenho meu (o prompt
+informa a flag sem informar a data que a disparou), hoje documentado. Depois disso passei a
+conferir toda afirmação de resultado contra os arquivos de saída antes de aceitá-la.
 
-2. **Primeiro teste "silencioso" que parecia sucesso.** O primeiro teste de conexão retornou
-   `content` vazio com `finish_reason: stop`, e a leitura apressada seria "a API não funciona".
-   Na verdade o `gpt-oss` gasta tokens num campo `reasoning` antes de responder, e o
-   `max_tokens=10` que eu tinha posto consumia tudo no raciocínio, sobrando zero para a
-   resposta. Só apareceu ao inspecionar o objeto `message` inteiro. Isso mudou o desenho: todos
-   os `max_tokens` do projeto foram dimensionados com folga por causa disso.
+**2. Nome de modelo desatualizado.** A configuração inicial usou `llama-3.3-70b-versatile` — o
+modelo sugerido no enunciado e o que a IA assumiu por padrão. Retornou `404 model_not_found`: os
+modelos gratuitos do Groq mudaram. Só descobri porque testei a conexão antes de escrever o resto.
+Passei a validar contra `client.models.list()`.
 
-3. **A própria IA da solução alucinou dados — e isso virou conteúdo da entrega.** No Nível 1,
-   o prompt v1 fez o modelo inventar um limite de "R$ 10.000" que não existe no enunciado. Em
-   vez de esconder ou refazer o prompt até "dar certo", mantive a execução no notebook e
-   documentei o erro na comparação v1 vs v2 — é a evidência mais concreta de por que cálculo
-   deve ficar em pandas e o LLM só interpretar.
+**3. Critério de validação que não se sustentava.** O plano inicial para validar a troca de
+transporte no Nível 3 era "os pareceres têm que sair idênticos". Ao executar, deu 6/10 — e o
+motivo não era o MCP, era o LLM não ser determinístico. O critério estava errado desde o começo.
+Troquei por comparar o **payload das ferramentas** (o que de fato deve ser invariante): 6/6
+idênticos. O erro rendeu o achado de auditabilidade descrito em [`ARQUITETURA.md`](ARQUITETURA.md).
 
-4. **Bug de tool calling que a IA não previu.** O agente quebrou em produção (`400
-   tool_use_failed`) porque o modelo tentava chamar uma ferramenta fictícia chamada `JSON` para
-   devolver a resposta final. Isso não estava em nenhum plano inicial — apareceu só ao rodar o
-   lote de verdade, e exigiu ler o corpo do erro para descobrir que o conteúdo válido vinha em
-   `failed_generation`. Rodar de verdade encontrou o que o planejamento não encontrou.
+**4. O LLM da solução também alucina de forma persuasiva.** No confronto, o parecer de `CLI-005`
+fundamenta o risco numa operação de R$ 409,16 — abaixo da mediana do cliente, portanto não é a
+operação atípica — e erra o ano da data. O texto é bem escrito e soa técnico. É a razão pela qual
+todo cálculo ficou em pandas: a camada determinística é o que permite auditar o modelo.
 
-5. **A IA escreveu documentação que os próprios resultados desmentiam — o erro mais sério.**
-   Numa primeira versão, o `README.md` e o `DECISOES.md` afirmavam que o agente "não chama
-   `operacoes_do_dia` para clientes sem fracionamento", como evidência de que ele decidia bem.
-   Ao rodar uma auditoria conferindo cada afirmação contra `outputs/pareceres_lote.json`,
-   descobri que era **o oposto**: 7 clientes sem fracionamento chamaram a ferramenta, e
-   `CLI-029` — que tem a flag — não chamou. A afirmação tinha sido escrita a partir de uma
-   única execução observada no começo, e generalizada sem verificação. Corrigi o texto e, ao
-   investigar a causa, encontrei um defeito real de desenho meu (o prompt informa a flag de
-   fracionamento sem informar a data que a disparou), que agora está documentado no
-   `DECISOES.md`. **Lição:** o risco maior de usar IA não foi ela escrever código errado — foi
-   ela escrever, de forma convincente, uma conclusão que eu não tinha verificado. Passei a
-   conferir toda afirmação de resultado contra os arquivos de saída antes de aceitá-la.
-
-6. **O LLM da solução também alucinou de forma persuasiva.** No confronto, o parecer de
-   `CLI-005` fundamenta o risco numa operação de R$ 409,16 (abaixo da mediana do cliente,
-   portanto não é a operação atípica) e erra o ano da data. O texto é bem escrito e soa
-   técnico. Isso reforçou a decisão de manter todo cálculo em pandas: é a camada determinística
-   que permite auditar o modelo e perceber esse tipo de erro.
-
-## Sobre autoria e entendimento
-
-O código foi escrito em par com a IA, mas cada decisão ambígua do enunciado foi discutida e
-decidida explicitamente antes da implementação, e as justificativas estão em `docs/DECISOES.md`.
-Os achados mais interessantes desta entrega (a alucinação do prompt v1, o bug do `tool JSON`, o
-padrão sistemático das 6 divergências no confronto, os caracteres invisíveis no parecer de
-`CLI-028`) vieram de rodar e inspecionar os resultados, não de gerar código — e é isso que eu
-levaria para a entrevista.
+O padrão dos quatro é o mesmo: a IA erra de forma plausível, e o que pegou os erros foi executar
+e conferir contra os dados, não revisar o texto.
