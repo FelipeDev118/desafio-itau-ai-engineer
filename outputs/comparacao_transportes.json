@@ -1,0 +1,136 @@
+{
+  "ferramentas_publicadas_mcp": [
+    "historico_cliente",
+    "operacoes_do_dia",
+    "perfil_canal"
+  ],
+  "payloads_identicos": true,
+  "casos_payload": [
+    {
+      "ferramenta": "historico_cliente",
+      "argumentos": "{\"cliente_id\": \"CLI-014\"}",
+      "payload_identico": true
+    },
+    {
+      "ferramenta": "historico_cliente",
+      "argumentos": "{\"cliente_id\": \"CLI-029\"}",
+      "payload_identico": true
+    },
+    {
+      "ferramenta": "perfil_canal",
+      "argumentos": "{\"cliente_id\": \"CLI-014\"}",
+      "payload_identico": true
+    },
+    {
+      "ferramenta": "perfil_canal",
+      "argumentos": "{\"cliente_id\": \"CLI-023\"}",
+      "payload_identico": true
+    },
+    {
+      "ferramenta": "operacoes_do_dia",
+      "argumentos": "{\"cliente_id\": \"CLI-014\", \"data\": \"2026-05-26\"}",
+      "payload_identico": true
+    },
+    {
+      "ferramenta": "operacoes_do_dia",
+      "argumentos": "{\"cliente_id\": \"CLI-017\", \"data\": \"2026-03-08\"}",
+      "payload_identico": true
+    }
+  ],
+  "vocabulario_ferramentas_identico": true,
+  "mesmo_nivel_risco": "6/10",
+  "tokens_direto": 34182,
+  "tokens_mcp": 31258,
+  "comparacao_por_cliente": [
+    {
+      "cliente_id": "CLI-014",
+      "risco_direto": "alto",
+      "risco_mcp": "medio",
+      "tools_direto": 3,
+      "tools_mcp": 2,
+      "tokens_direto": 3616,
+      "tokens_mcp": 1693
+    },
+    {
+      "cliente_id": "CLI-023",
+      "risco_direto": "alto",
+      "risco_mcp": "alto",
+      "tools_direto": 3,
+      "tools_mcp": 3,
+      "tokens_direto": 4191,
+      "tokens_mcp": 2512
+    },
+    {
+      "cliente_id": "CLI-028",
+      "risco_direto": "alto",
+      "risco_mcp": "alto",
+      "tools_direto": 3,
+      "tools_mcp": 3,
+      "tokens_direto": 3504,
+      "tokens_mcp": 3628
+    },
+    {
+      "cliente_id": "CLI-013",
+      "risco_direto": "medio",
+      "risco_mcp": "medio",
+      "tools_direto": 3,
+      "tools_mcp": 2,
+      "tokens_direto": 3546,
+      "tokens_mcp": 2918
+    },
+    {
+      "cliente_id": "CLI-005",
+      "risco_direto": "medio",
+      "risco_mcp": "alto",
+      "tools_direto": 3,
+      "tools_mcp": 3,
+      "tokens_direto": 3943,
+      "tokens_mcp": 3854
+    },
+    {
+      "cliente_id": "CLI-026",
+      "risco_direto": "alto",
+      "risco_mcp": "alto",
+      "tools_direto": 2,
+      "tools_mcp": 3,
+      "tokens_direto": 2877,
+      "tokens_mcp": 2690
+    },
+    {
+      "cliente_id": "CLI-001",
+      "risco_direto": "medio",
+      "risco_mcp": "alto",
+      "tools_direto": 2,
+      "tools_mcp": 3,
+      "tokens_direto": 2792,
+      "tokens_mcp": 3782
+    },
+    {
+      "cliente_id": "CLI-029",
+      "risco_direto": "alto",
+      "risco_mcp": "alto",
+      "tools_direto": 2,
+      "tools_mcp": 2,
+      "tokens_direto": 2800,
+      "tokens_mcp": 2984
+    },
+    {
+      "cliente_id": "CLI-017",
+      "risco_direto": "medio",
+      "risco_mcp": "medio",
+      "tools_direto": 3,
+      "tools_mcp": 3,
+      "tokens_direto": 4148,
+      "tokens_mcp": 2803
+    },
+    {
+      "cliente_id": "CLI-030",
+      "risco_direto": "alto",
+      "risco_mcp": "medio",
+      "tools_direto": 2,
+      "tools_mcp": 3,
+      "tokens_direto": 2765,
+      "tokens_mcp": 4394
+    }
+  ]
+}
