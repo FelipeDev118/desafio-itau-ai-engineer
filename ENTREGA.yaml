@@ -1,0 +1,23 @@
+candidato: Felipe
+modelo_usado: openai/gpt-oss-120b
+provedor: groq
+horas_dedicadas: 1
+
+nivel_1:
+  limpeza_dados:      {status: completo, onde: "nivel_1/nivel_1.ipynb, seção 'Parte A.2 — Diagnóstico de qualidade dos dados'"}
+  regras_pandas:      {status: completo, onde: "nivel_1/nivel_1.ipynb, seção 'Parte A.5 — Regras determinísticas'"}
+  validacao_regras:   {status: parcial,  onde: "nivel_1/nivel_1.ipynb, seção 'Parte A.6 — Validação da Regra 1'", nota: "validei explicitamente a Regra 1 (caso positivo CLI-A-1 vs caso negativo CLI-A-3, com assert). A Regra 2 não tem célula de validação dedicada — só a listagem das operações sinalizadas."}
+  saida_estruturada:  {status: completo, onde: "nivel_1/nivel_1.ipynb, classe ParecerLLM (Pydantic) + função parsear_parecer, com tratamento de resposta malformada"}
+  comparacao_prompts: {status: completo, onde: "nivel_1/nivel_1.ipynb, seções 'Prompt v1', 'Prompt v2' e 'Comparação entre as duas versões'"}
+
+nivel_2:
+  regras_em_escala: {status: completo, onde: "nivel_2/dados.py; top 10 salvo em outputs/top10_clientes_sinalizados.csv"}
+  ferramentas:      {status: completo, onde: "nivel_2/tools.py (historico_cliente, operacoes_do_dia, perfil_canal)"}
+  agente:           {status: completo, onde: "nivel_2/agente.py — function calling nativo, o modelo escolhe quais tools chamar"}
+  lote:             {status: completo, onde: "nivel_2/lote.py; resultados em outputs/pareceres_lote.json e outputs/metricas_lote.csv"}
+  confronto:        {status: completo, onde: "nivel_2/confronto.py; resultados em outputs/confronto_regra_vs_agente.csv e outputs/confronto_resumo.json"}
+
+nivel_3:
+  trilha_escolhida: B
+  status: nao_feito
+  plano: "docs/DECISOES.md#nível-3"
