@@ -1,6 +1,6 @@
 {
-  "taxa_concordancia": 0.5,
+  "taxa_concordancia": 0.3,
   "total_clientes": 10,
-  "concordantes": 5,
-  "divergentes": 5
+  "concordantes": 3,
+  "divergentes": 7
 }

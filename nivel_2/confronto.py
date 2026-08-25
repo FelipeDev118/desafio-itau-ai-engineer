@@ -62,8 +62,12 @@ def main():
                 "flag_fracionamento": flags["flag_fracionamento"],
                 "qtd_operacoes_atipicas": qtd_atipicas,
                 "nivel_risco_esperado_regra": esperado,
-                "nivel_risco_agente": obtido,
+                # "sem_parecer" (nao None) para nao virar NaN silencioso num DataFrame
+                # e para deixar explicito, no CSV, que o agente nao produziu resposta -
+                # ver erro_parsing para o motivo.
+                "nivel_risco_agente": obtido or "sem_parecer",
                 "concorda": obtido == esperado,
+                "erro_parsing": r.get("erro_parsing"),
                 "tipologia_suspeita": (r["parecer"] or {}).get("tipologia_suspeita"),
                 "justificativa": (r["parecer"] or {}).get("justificativa"),
             }
@@ -81,7 +85,10 @@ def main():
     for _, row in divergentes.iterrows():
         print(f"\n{row['cliente_id']}: regra esperava '{row['nivel_risco_esperado_regra']}', "
               f"agente deu '{row['nivel_risco_agente']}'")
-        print(f"  justificativa do agente: {row['justificativa']}")
+        if pd.notna(row["erro_parsing"]):
+            print(f"  sem parecer valido: {row['erro_parsing']}")
+        else:
+            print(f"  justificativa do agente: {row['justificativa']}")
 
     OUTPUTS_DIR.mkdir(exist_ok=True)
     confronto.to_csv(OUTPUTS_DIR / "confronto_regra_vs_agente.csv", index=False)

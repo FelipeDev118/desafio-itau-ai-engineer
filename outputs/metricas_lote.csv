@@ -1,11 +1,11 @@
 cliente_id,nivel_risco,erro_parsing,qtd_tools_chamadas,tokens_total,latencia_s
-CLI-014,alto,,3,3616,3.27
-CLI-023,alto,,3,4191,5.2
-CLI-028,alto,,3,3504,2.78
-CLI-013,medio,,3,3546,2.84
-CLI-005,medio,,3,3943,14.82
-CLI-026,alto,,2,2877,7.82
-CLI-001,medio,,2,2792,10.39
-CLI-029,alto,,2,2800,5.07
-CLI-017,medio,,3,4148,18.79
-CLI-030,alto,,2,2765,9.34
+CLI-014,alto,,2,2928,9.58
+CLI-023,alto,,3,4013,5.92
+CLI-028,medio,,3,2401,16.62
+CLI-013,,numero maximo de turnos de tool-calling excedido,4,3837,18.72
+CLI-005,medio,,3,4207,17.24
+CLI-026,alto,,3,2559,20.96
+CLI-001,medio,,2,2713,13.28
+CLI-029,medio,,3,2738,15.54
+CLI-017,medio,,2,3098,9.71
+CLI-030,alto,,2,2880,10.69

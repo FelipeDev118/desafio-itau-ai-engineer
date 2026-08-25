@@ -104,10 +104,10 @@ python nivel_3/comparar_transportes.py     # valida MCP vs. import direto
   fracionamento não consultam o recorte diário, porque o prompt informa *que* a flag está ativa
   sem informar *em qual data*. Analisado em
   [`docs/DECISOES.md`](docs/DECISOES.md#nível-2--agente-e-ferramentas).
-- A **concordância entre regra e agente foi de 50%**, mas o achado relevante está nas
-  divergências: em 2 dos 5 casos **a regra estava certa e o agente errado** — em `CLI-005` o
-  parecer fundamenta o risco numa operação de R$ 409,16 que está *abaixo* da mediana do cliente
-  (a operação realmente atípica era outra, de R$ 30.743,97) e ainda alucina o ano da data. O
-  texto soa técnico e plausível mesmo estando errado, o que é o argumento mais concreto desta
-  entrega a favor de manter a camada determinística auditável. Análise em
+- A **concordância entre regra e agente variou entre execuções** (50% numa rodada, 30% noutra,
+  mesmo código e dados) — essa instabilidade em si é o achado mais importante: numa rodada, o
+  parecer de `CLI-005` citou uma operação (R$ 409,16) que não é a sinalizada pela Regra 2; na
+  outra, citou as corretas. Na maioria das divergências qualitativas, o agente reconhece o mesmo
+  padrão que disparou a regra e classifica abaixo assim mesmo — um limiar mais conservador para
+  "alto", não um erro de fato. Análise em
   [`docs/DECISOES.md`](docs/DECISOES.md#nível-2--confronto-regra-vs-modelo).

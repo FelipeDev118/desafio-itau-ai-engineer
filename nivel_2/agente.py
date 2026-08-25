@@ -16,6 +16,7 @@ from groq import BadRequestError, Groq, RateLimitError
 from pydantic import BaseModel, ValidationError
 
 from dados import aplicar_regras, carregar_e_limpar, ranking_clientes_sinalizados
+from observabilidade import Coletor, calcular_custo_usd
 from tools import TOOLS_SPEC, historico_cliente
 
 load_dotenv()
@@ -103,10 +104,13 @@ def _executar_tool(nome: str, args: dict):
 def _chat_com_retry(max_tentativas: int = 5, **kwargs):
     """Free tier do Groq tem limite de tokens/minuto (TPM) baixo. Em vez de deixar o
     lote inteiro quebrar no primeiro 429, esperamos o tempo indicado pela propria API
-    (RateLimitError expoe retry_after em segundos) e tentamos de novo."""
+    (RateLimitError expoe retry_after em segundos) e tentamos de novo.
+
+    Retorna (resposta, tentativas_de_rate_limit) - o contador entra na observabilidade,
+    porque espera por rate limit e latencia que o usuario sente mas nao e custo de modelo."""
     for tentativa in range(max_tentativas):
         try:
-            return CLIENT.chat.completions.create(**kwargs)
+            return CLIENT.chat.completions.create(**kwargs), tentativa
         except RateLimitError as e:
             espera = getattr(e, "retry_after", None) or (5 * (tentativa + 1))
             try:
@@ -119,9 +123,14 @@ def _chat_com_retry(max_tentativas: int = 5, **kwargs):
     raise RuntimeError("rate limit persistente apos varias tentativas")
 
 
-def rodar_agente(cliente_id: str, flags: dict, max_turnos: int = 4) -> dict:
+def rodar_agente(cliente_id: str, flags: dict, max_turnos: int = 4,
+                 coletor: Coletor | None = None) -> dict:
     """Loop de function-calling: o modelo decide quais tools chamar até responder o
-    parecer final em JSON. Retorna parecer + métricas (tokens, latência, tools usadas)."""
+    parecer final em JSON. Retorna parecer + métricas (tokens, latência, tools usadas).
+
+    Se `coletor` for passado, cada chamada de API é registrada individualmente nele
+    (ver observabilidade.py) — é o que permite separar custo do turno de decisão do
+    turno de redação."""
     mensagens = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {
@@ -137,9 +146,10 @@ def rodar_agente(cliente_id: str, flags: dict, max_turnos: int = 4) -> dict:
     tokens_total = 0
     t0 = time.time()
 
-    for _ in range(max_turnos):
+    for turno in range(1, max_turnos + 1):
+        t_chamada = time.time()
         try:
-            resp = _chat_com_retry(
+            resp, tentativas_rl = _chat_com_retry(
                 model=MODEL,
                 messages=mensagens,
                 tools=TOOLS_OPENAI_SCHEMA,
@@ -167,6 +177,24 @@ def rodar_agente(cliente_id: str, flags: dict, max_turnos: int = 4) -> dict:
             raise
         tokens_total += resp.usage.total_tokens
         msg = resp.choices[0].message
+
+        if coletor is not None:
+            # o tipo do turno so e conhecido DEPOIS da resposta: se veio tool_calls, o
+            # modelo gastou esta chamada decidindo; se veio texto, gastou redigindo.
+            coletor.registrar(
+                cliente_id=cliente_id,
+                turno=turno,
+                tipo_turno="decisao_ferramenta" if msg.tool_calls else "resposta_final",
+                modelo=MODEL,
+                tokens_entrada=resp.usage.prompt_tokens,
+                tokens_saida=resp.usage.completion_tokens,
+                tokens_total=resp.usage.total_tokens,
+                latencia_s=round(time.time() - t_chamada, 3),
+                custo_usd=calcular_custo_usd(
+                    MODEL, resp.usage.prompt_tokens, resp.usage.completion_tokens
+                ),
+                tentativas_rate_limit=tentativas_rl,
+            )
 
         if msg.tool_calls:
             mensagens.append(

@@ -25,3 +25,4 @@ nivel_3:
 
 bonus:
   docker: {status: completo, onde: "Dockerfile, docker-compose.yml, verificar_ambiente.py; ver docs/REPRODUTIBILIDADE.md", nota: "Imagem verificada: reproduz a camada deterministica com os mesmos numeros da entrega, e nao contem a chave de API."}
+  observabilidade_custo: {status: completo, onde: "nivel_2/observabilidade.py; saidas em outputs/chamadas_llm.csv e outputs/custo_resumo.json", nota: "Custo e latencia por CHAMADA de API (nao por cliente), separando turno de decisao de ferramenta do turno de resposta final. Preco por token de outputs/custo_resumo.json verificado contra a tabela oficial da Groq (openai/gpt-oss-120b: US$ 0.15/M entrada, US$ 0.60/M saida)."}

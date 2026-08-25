@@ -114,30 +114,51 @@ Critério final:
 | exatamente 1 operação atípica, sem fracionamento | `médio` |
 
 Fracionamento vai direto para "alto" porque é padrão **intencional** (structuring), não outlier
-estatístico. Resultado: **50% de concordância (5/10)**, com divergências nas duas direções.
+estatístico. Resultado, na última execução: **30% de concordância (3/10)**, 7 divergências.
 
-### A análise das divergências não deu o resultado que eu esperava
+### O que a auditoria dos textos mostrou, e o que ela não mostrou
 
-O enunciado sugere que um agente que discorda com boa justificativa pode estar certo. Conferindo
-caso a caso contra os dados, encontrei o contrário em dois:
+A tentação é ler "30% de concordância" como "o agente discorda muito da regra, e às vezes está
+certo". Conferindo justificativa por justificativa contra os dados reais, a história é mais
+específica: em **6 dos 7** divergentes, o agente **identifica corretamente** o mesmo padrão que
+disparou a regra e ainda assim classifica abaixo.
 
-- **`CLI-005`** (regra: alto · agente: médio). O parecer fundamenta o risco em *"a operação de
-  **2024**-05-07 (R$ 409,16)"*. Dois erros verificáveis: o ano é **2026**, e — muito pior —
-  **R$ 409,16 não é a operação atípica**, é um valor *abaixo* da mediana do cliente
-  (R$ 2.144,18). As operações realmente sinalizadas são `OP-00049` (R$ 11.988,17) e `OP-00043`
-  (R$ 30.743,97). O agente raciocinou sobre a operação errada e mesmo assim produziu um parecer
-  que **soa** plausível. A regra estava certa, o agente errado.
-- **`CLI-017`** (regra: alto · agente: médio). O parecer nomeia a tipologia como **smurfing** e
-  então classifica o risco como *médio* — internamente inconsistente.
-- Na direção oposta, **`CLI-030`** (regra: médio · agente: alto) é escalada **legítima**: o
-  agente notou que R$ 85.546,51 de R$ 117.780,89 estão concentrados em duas TEDs, concentração
-  que a Regra 2, comparando operação a operação contra a mediana, não captura.
+- **`CLI-029`** (regra: alto · agente: médio): descreve com precisão verificável — conferi contra
+  a base — "4 operações de alto valor (entre R$ 14.326,29 e R$ 19.418,96)... todas via TED ou
+  PIX" no dia 26/05/2026, e nomeia o padrão: *"o padrão de fracionamento está presente"*. Mesmo
+  assim, médio.
+- **`CLI-017`** (regra: alto · agente: médio): reconhece explicitamente *"a flag de fracionamento
+  já está ativada"*. Mesmo assim, médio.
+- **`CLI-005`**, **`CLI-001`**, **`CLI-028`** (regra: alto · agente: médio): nos três, a operação
+  e o canal citados batem com os dados — no caso de `CLI-005`, "espécie (R$ 15,0 mil em 2
+  operações)" e "cartão (R$ 31,1 mil em 2 operações)" conferem exatamente com o recálculo
+  (R$ 15.013,22 e R$ 31.153,13). Mesmo assim, médio.
 
-**A conclusão que levo é sobre a forma, não o placar**: a justificativa em linguagem natural é
-persuasiva *independentemente de estar correta*. Os pareceres errados são bem escritos, citam
-números e soam técnicos. Num fluxo real, um analista lendo só o parecer não teria como perceber
-que a operação citada é a errada. É o argumento mais concreto desta entrega a favor de manter a
-camada determinística: ela é o que torna o modelo **auditável**.
+**O padrão real não é o agente errando o fato — é o agente tendo um limiar mais alto para "alto"
+do que o meu critério.** Ele parece reservar "alto" para quando múltiplos fatores se reforçam
+(fracionamento *e* canal atípico, por exemplo), enquanto meu critério dispara com um único sinal.
+Nenhum dos dois é "a verdade"; são dois desenhos de threshold diferentes, e a divergência
+sistemática — não aleatória — é o dado interessante.
+
+- Na direção oposta, **`CLI-030`** (regra: médio · agente: alto) segue sendo escalada
+  **defensável**: R$ 85.546,51 de R$ 117.780,89 concentrados em duas TEDs, concentração que a
+  Regra 2, comparando operação a operação contra a mediana, não enxerga isolada.
+- **`CLI-013`** não produziu parecer — esgotou os 4 turnos de function-calling sem responder em
+  texto. É o tratamento de malformado funcionando como desenhado (`parecer: None` +
+  `erro_parsing` explícito, em vez de o processo quebrar), mas expõe um limite real: um caso que
+  exige mais idas e vindas pode nunca fechar dentro de `max_turnos`.
+
+**Nota de não-determinismo, que é o achado mais importante desta seção.** A execução anterior
+deste confronto (preservada em commit anterior) tinha dado **50% de concordância**, e o parecer
+de `CLI-005` **citava uma operação errada** (R$ 409,16, valor abaixo da mediana do cliente — não
+é a operação atípica). Nesta execução, com o **mesmo código e os mesmos dados**, `CLI-005` cita
+as operações corretas e a concordância caiu para 30%. Isso não invalida a leitura acima — ela é
+sobre a execução atual — mas é evidência direta, não só teórica, do problema de reprodutibilidade
+tratado em [`ARQUITETURA.md`](ARQUITETURA.md): a mesma pergunta, feita duas vezes, rendeu um
+parecer factualmente errado numa vez e correto na outra. Isso é mais sério que qualquer
+divergência regra-vs-agente isolada: significa que **este próprio documento estaria diferente**
+se eu tivesse rodado o lote uma terceira vez, e é por isso que a seção 3 propõe tratar o parecer
+como artefato versionado por hash, não como algo recalculável sob demanda.
 
 ## Nível 3: Trilha B (MCP)
 
@@ -224,10 +245,10 @@ estrutural não substitui sanitização de texto.
   uma suíte. Para código que decide encaminhar cliente a análise humana, isso é pouco.
 - **Acoplado a um provedor.** O tratamento do bug da "tool `JSON`" é específico do
   `gpt-oss` via Groq; trocar de provedor exige revisitar essa parte.
-- **Custo medido por cliente, não por chamada.** Agrego os turnos, então não sei qual turno
-  (decisão vs. redação) consome mais — que é exatamente o que eu precisaria para otimizar.
 - **Só os 10 mais sinalizados passam pelo agente**, por causa do rate limit; os outros 20
-  clientes não recebem parecer.
+  clientes não recebem parecer, e não há como saber se algum deveria ter sido pego.
+- **`max_turnos=4` pode não bastar.** `CLI-013` esgotou o limite sem responder — o tratamento de
+  malformado funcionou, mas o caso não chegou a parecer nenhum.
 
 ---
 
@@ -235,8 +256,10 @@ estrutural não substitui sanitização de texto.
 
 ## Verificação de aderência do parecer aos dados (prioridade 1)
 
-O problema do `CLI-005` — parecer bem escrito fundamentado na operação errada — é o mais grave
-que encontrei, porque passa despercebido por revisão humana.
+Numa execução anterior, o parecer de `CLI-005` citou uma operação (R$ 409,16) que não é a
+sinalizada pela Regra 2 — bem escrito, plausível, e errado. É o problema mais grave encontrado
+nesta entrega, porque passa despercebido por revisão humana, e a não-reprodutibilidade descrita
+acima (a mesma pergunta rendendo parecer certo numa vez e errado noutra) o torna imprevisível.
 
 **Arquitetura**: uma etapa de *grounding check* determinística entre o agente e a gravação do
 parecer. Ela extrai da `justificativa` toda referência verificável (IDs de operação, valores em

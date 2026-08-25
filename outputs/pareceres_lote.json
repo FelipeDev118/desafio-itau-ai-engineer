@@ -3,12 +3,15 @@
     "cliente_id": "CLI-014",
     "parecer": {
       "nivel_risco": "alto",
-      "tipologia_suspeita": "Valor atípico em transferência recebida",
+      "tipologia_suspeita": "Uso de Pix para movimentação de valores atípicos",
       "red_flags": [
-        "Operação única de R$9.157,80 via boleto, significativamente acima da média (R$7.330,00) e mediana (R$2.308,41)",
-        "Concentração de volume em canal PIX, mas a operação suspeita ocorreu via boleto"
+        "Valor médio (R$7.330) muito acima do valor mediano (R$2.308), indicando outlier",
+        "Concentração de volume em Pix (≈49% do total) – canal de alto risco",
+        "Contrapartes recorrentes (ex.: Mirante Transportes ME) sem justificativa clara",
+        "Flag de valor atípico ativada",
+        "Baixa quantidade de operações (11) com alto volume total (R$80.630)"
       ],
-      "justificativa": "A flag de valor atípico indica que a operação de R$9.157,80 está fora do padrão histórico. Embora não haja fracionamento, o valor supera a média e a mediana, e ocorre em um canal menos usado (boleto) para transferências recebidas, sugerindo possível estruturação ou uso de canal atípico para movimentar recursos. O volume total e a frequência de operações não mitigam a suspeita, justificando risco alto."
+      "justificativa": "O cliente realizou 11 operações em ~3 meses, totalizando R$80.629,99. O valor médio está muito acima do mediano, indicando transações de valor atípico. A maior parte do volume (≈49%) ocorreu via Pix, canal frequentemente usado para estruturação e lavagem de dinheiro. Há contrapartes frequentes sem clareza de vínculo comercial, e a flag de valor atípico já foi disparada. Esses elementos combinados apontam para risco alto de lavagem de dinheiro."
     },
     "erro_parsing": null,
     "texto_bruto": null,
@@ -20,21 +23,14 @@
         }
       },
       {
-        "tool": "operacoes_do_dia",
-        "args": {
-          "cliente_id": "CLI-014",
-          "data": "2026-05-26"
-        }
-      },
-      {
         "tool": "perfil_canal",
         "args": {
           "cliente_id": "CLI-014"
         }
       }
     ],
-    "tokens_total": 3616,
-    "latencia_s": 3.27,
+    "tokens_total": 2928,
+    "latencia_s": 9.58,
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
@@ -46,15 +42,14 @@
     "cliente_id": "CLI-023",
     "parecer": {
       "nivel_risco": "alto",
-      "tipologia_suspeita": "Operação em espécie de alto valor e uso concentrado de TED",
+      "tipologia_suspeita": "Uso de espécie em valor elevado associado a transferências eletrônicas (TED)",
       "red_flags": [
-        "Transação em espécie (R$ 41.768,17) fora do padrão de cliente corporativo",
-        "Valor médio das operações (R$ 12.377,92) muito acima da mediana (R$ 3.241,16)",
-        "Concentração de volume no canal TED (R$ 76.882,25) e uso de espécie",
-        "Baixa diversidade de contrapartes (apenas 3 diferentes em 12 operações)",
+        "Operação em espécie de R$ 41.768,17 (valor muito acima da mediana)",
+        "Desvio significativo entre valor médio (R$ 12.377,92) e mediano (R$ 3.241,16)",
+        "Concentração de volume em TED (R$ 76.882,25) e caixa",
         "Flag de valor atípico ativada"
       ],
-      "justificativa": "O cliente apresenta um volume total elevado (R$ 148.5 mil) em apenas 12 operações, com destaque para uma operação em espécie de R$ 41.7 mil, que é incomum para o perfil corporativo. O valor médio das transações está muito acima da mediana, indicando presença de valores atípicos. Além disso, há concentração de recursos no canal TED e uso de espécie, bem como pouca variedade de contrapartes, o que reforça a suspeita de movimentação financeira não típica. Esses fatores combinados justificam a classificação de risco alto."
+      "justificativa": "O cliente apresenta um volume total de R$ 148.5 mil em apenas 12 operações, com um valor médio muito superior ao mediano, indicando a presença de transações de valor atípico. Destaca-se uma operação em espécie de mais de R$ 41 mil, o que é incomum para o perfil e pode indicar tentativa de inserir recursos ao sistema financeiro. Além disso, há concentração de recursos em transferências TED, que podem ser usadas para movimentar rapidamente grandes quantias. Esses elementos, combinados com a flag de valor atípico, justificam a classificação de risco alto e a suspeita de uso de espécie para lavagem de dinheiro."
     },
     "erro_parsing": null,
     "texto_bruto": null,
@@ -79,8 +74,8 @@
         }
       }
     ],
-    "tokens_total": 4191,
-    "latencia_s": 5.2,
+    "tokens_total": 4013,
+    "latencia_s": 5.92,
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
@@ -91,14 +86,15 @@
   {
     "cliente_id": "CLI-028",
     "parecer": {
-      "nivel_risco": "alto",
-      "tipologia_suspeita": "Valor atípico em transferência via cartão",
+      "nivel_risco": "medio",
+      "tipologia_suspeita": "Transferência via cartão com valor atípico",
       "red_flags": [
-        "Operação única de R$ 6.913,84 via cartão, valor acima da média (R$ 7.395,9) porém próximo ao limite superior e sem histórico de uso de cartão para transferências",
-        "Uso predominante do canal TED, mas a operação suspeita foi realizada via cartão, indicando possível tentativa de contornar monitoramento",
-        "Valor atípico detectado pelas regras determinísticas"
+        "Valor da operação (R$ 6.913,84) acima da média do canal cartão",
+        "Contraparte única e empresarial (Farol Distribuidora LTDA)",
+        "Operação em canal menos utilizado pelo cliente (cartão)",
+        "Flag de valor atípico já disparada"
       ],
-      "justificativa": "O cliente apresenta um volume significativo de operações (12) e um valor médio alto, porém a maioria das transferências ocorre via TED. A operação de 23/05/2023 (sic) foi feita via cartão, canal incomum para esse tipo de valor, e o flag_valor_atipivo ​     ​           ​              ​ "
+      "justificativa": "O cliente realizou 12 operações com volume total de R$ 88.750,80, sendo a maioria via TED. A operação em questão, de R$ 6.913,84, ocorreu via cartão, canal que representa apenas 4 operações e volume médio de R$ 3.493,05. O valor está significativamente acima da média desse canal e foi enviado a uma única contraparte empresarial, sem histórico de relacionamento. Não há indícios de fracionamento, mas o valor atípico e a escolha do canal menos usado configuram risco médio de lavagem de dinheiro."
     },
     "erro_parsing": null,
     "texto_bruto": null,
@@ -123,8 +119,8 @@
         }
       }
     ],
-    "tokens_total": 3504,
-    "latencia_s": 2.78,
+    "tokens_total": 2401,
+    "latencia_s": 16.62,
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
@@ -134,18 +130,8 @@
   },
   {
     "cliente_id": "CLI-013",
-    "parecer": {
-      "nivel_risco": "medio",
-      "tipologia_suspeita": "Valor atípico em transferências",
-      "red_flags": [
-        "Valor atípico detectado (flag_valor_atipico=true)",
-        "Concentração de volume elevado em canal TED (55% do volume total)",
-        "Operação única de R$312,54 em TED para contraparte pouco frequente"
-      ],
-      "justificativa": "O cliente apresenta volume total de R$81.730,99 com média de R$8.173,10 por operação, porém a maioria das transações ocorre via PIX, enquanto o canal TED concentra 55% do volume total em apenas 3 operações, indicando possível uso de TED para movimentações de valor relevante. A flag de valor atípico reforça a suspeita de estruturação ou uso indevido de canais, justificando risco médio."
-    },
-    "erro_parsing": null,
-    "texto_bruto": null,
+    "parecer": null,
+    "erro_parsing": "numero maximo de turnos de tool-calling excedido",
     "tools_chamadas": [
       {
         "tool": "historico_cliente",
@@ -161,14 +147,22 @@
         }
       },
       {
-        "tool": "perfil_canal",
+        "tool": "operacoes_do_dia",
         "args": {
-          "cliente_id": "CLI-013"
+          "cliente_id": "CLI-013",
+          "data": "2026-04-10"
+        }
+      },
+      {
+        "tool": "operacoes_do_dia",
+        "args": {
+          "cliente_id": "CLI-013",
+          "data": "2026-05-15"
         }
       }
     ],
-    "tokens_total": 3546,
-    "latencia_s": 2.84,
+    "tokens_total": 3837,
+    "latencia_s": 18.72,
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
@@ -180,13 +174,14 @@
     "cliente_id": "CLI-005",
     "parecer": {
       "nivel_risco": "medio",
-      "tipologia_suspeita": "Valor atípico em operação única",
+      "tipologia_suspeita": "Integração de recursos via espécie e cartões",
       "red_flags": [
-        "Valor atípico detectado (flag_valor_atipico=true)",
-        "Operação de depósito de R$409,16 via cartão, fora do padrão de canal predominante (PIX)",
-        "Concentração de volume em poucos canais (cartão e espécie) com valores elevados"
+        "valor atípico detectado",
+        "uso significativo de espécie (cash)",
+        "depósitos elevados em cartão",
+        "concentração de volume em poucas operações"
       ],
-      "justificativa": "O cliente apresenta um volume total de R$64.742,66 em 11 operações, com valor médio de R$5.886,70, porém a maioria das transações ocorre via PIX, canal predominante. A operação de 2024-05-07 (R$409,16) foi realizada via cartão, divergindo do padrão de uso e apresentando valor atípico relativo ao histórico de depósitos. Embora não haja fracionamento, a combinação de valor atípico e desvio de canal eleva o risco para médio."
+      "justificativa": "O cliente apresenta um volume total de R$64.7 mil em apenas 11 operações, com média alta (R$5.9 mil) e mediana baixa (R$2.1 mil), indicando disparidade entre operações. Destaca-se o uso expressivo de espécie (R$15.0 mil em 2 operações) e de cartões (R$31.1 mil em 2 depósitos), ambos acima do padrão para a maioria dos clientes, além da flag de valor atípico já sinalizada. Não há fracionamento, mas a concentração de grandes valores em poucos movimentos e a presença de canais de alto risco (caixa e cartões) sugerem possível integração de recursos ilícitos, justificando risco médio."
     },
     "erro_parsing": null,
     "texto_bruto": null,
@@ -198,21 +193,21 @@
         }
       },
       {
+        "tool": "perfil_canal",
+        "args": {
+          "cliente_id": "CLI-005"
+        }
+      },
+      {
         "tool": "operacoes_do_dia",
         "args": {
           "cliente_id": "CLI-005",
           "data": "2026-05-07"
         }
-      },
-      {
-        "tool": "perfil_canal",
-        "args": {
-          "cliente_id": "CLI-005"
-        }
       }
     ],
-    "tokens_total": 3943,
-    "latencia_s": 14.82,
+    "tokens_total": 4207,
+    "latencia_s": 17.24,
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
@@ -224,14 +219,14 @@
     "cliente_id": "CLI-026",
     "parecer": {
       "nivel_risco": "alto",
-      "tipologia_suspeita": "Transação atípica de alto valor via PIX para contraparte sem histórico",
+      "tipologia_suspeita": "Pagamento de alto valor via PIX para empresa sem histórico",
       "red_flags": [
-        "Valor da operação (R$21.261,01) muito acima da média (R$4.560,77) e mediana (R$2.032,93)",
-        "Concentração de 77% do volume diário em uma única operação",
-        "Uso de canal PIX para pagamento de valor elevado a empresa não recorrente",
-        "Mistura de canais (PIX e saque em cartão) no mesmo dia"
+        "Valor atípico detectado (operacao de R$21.261,01)",
+        "Uso de canal digital (PIX) para pagamento de alto valor",
+        "Contraparte empresarial sem frequência de transações anteriores",
+        "Desvio do canal predominante (especie) para operação digital de grande monta"
       ],
-      "justificativa": "O cliente apresenta um padrão de operações de baixo volume e valores moderados. No dia 2026-05-17 realizou um pagamento via PIX de R$21.261,01, valor que supera significativamente a média histórica, representando a maior parte do volume diário e total. A contraparte (Solar Industria LTDA) não consta como frequente nas transações anteriores, indicando ausência de relacionamento prévio. Essa combinação de alto valor, canal digital e falta de histórico caracteriza risco elevado de lavagem de dinheiro, justificando a classificação de risco alto."
+      "justificativa": "O cliente apresenta um volume total de R$54.729,28 em 12 operacoes, com media de R$4.560,77. Uma operacao isolada de R$21.261,01 via PIX representa quase 39% do volume total e mais de quatro vezes a media, configurando valor atípico. A contrapartida (Solar Industria LTDA) aparece apenas uma vez no historico, indicando falta de relacionamento estabelecido. Além disso, o canal predominante do cliente é espécie, mas a operacao suspeita ocorreu via PIX, canal digital frequentemente usado para movimentacoes de risco. Esses fatores combinados elevam o risco para alto, recomendando aprofundamento da investigacao e possivel comunicacao ao COAF."
     },
     "erro_parsing": null,
     "texto_bruto": null,
@@ -248,10 +243,16 @@
           "cliente_id": "CLI-026",
           "data": "2026-05-17"
         }
+      },
+      {
+        "tool": "perfil_canal",
+        "args": {
+          "cliente_id": "CLI-026"
+        }
       }
     ],
-    "tokens_total": 2877,
-    "latencia_s": 7.82,
+    "tokens_total": 2559,
+    "latencia_s": 20.96,
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
@@ -263,13 +264,14 @@
     "cliente_id": "CLI-001",
     "parecer": {
       "nivel_risco": "medio",
-      "tipologia_suspeita": "Transferência de valor atípico",
+      "tipologia_suspeita": "Injeção de caixa em operação atípica",
       "red_flags": [
-        "Valor da operação (R$ 5.016,62) acima da média histórica (R$ 4.794,78) e muito acima da mediana (R$ 1.609,15)",
-        "Operação única com contraparte pouco recorrente (Orion Importacao LTDA)",
-        "Uso de canal TED para transferência de valor elevado"
+        "Operação em espécie de R$25.110,15, representando mais de 50% do volume total",
+        "Valor médio elevado (R$4.794,78) versus mediano baixo (R$1.609,15)",
+        "Ausência de contrapartes recorrentes",
+        "Uso predominante de TED para transferências sem justificativa clara"
       ],
-      "justificativa": "A única operação recente apresenta valor significativamente superior à mediana e ligeiramente acima da média, sem histórico de relacionamento com a contraparte e sem indícios de fracionamento. Esse padrão indica risco médio de lavagem de dinheiro, exigindo monitoramento adicional e eventual solicitação de documentação ao cliente."
+      "justificativa": "O cliente apresenta um volume total de R$47.947,81 em apenas 10 operações, com destaque para uma única operação em espécie de R$25.110,15, que supera a metade do volume total e está muito acima do valor mediano. Essa disparidade gera o flag de valor atípico. Não há indícios de fracionamento, mas a concentração de recursos em caixa e a falta de contrapartes recorrentes sugerem possível tentativa de introdução de recursos ilícitos no sistema bancário, justificando um nível de risco médio."
     },
     "erro_parsing": null,
     "texto_bruto": null,
@@ -281,15 +283,14 @@
         }
       },
       {
-        "tool": "operacoes_do_dia",
+        "tool": "perfil_canal",
         "args": {
-          "cliente_id": "CLI-001",
-          "data": "2026-05-26"
+          "cliente_id": "CLI-001"
         }
       }
     ],
-    "tokens_total": 2792,
-    "latencia_s": 10.39,
+    "tokens_total": 2713,
+    "latencia_s": 13.28,
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
@@ -300,15 +301,15 @@
   {
     "cliente_id": "CLI-029",
     "parecer": {
-      "nivel_risco": "alto",
+      "nivel_risco": "medio",
       "tipologia_suspeita": "Fracionamento de valores (structuring)",
       "red_flags": [
-        "Flag de fracionamento ativada",
-        "Uso predominante de TED para grandes volumes",
-        "Operações repetidas com mesmas contrapartes",
-        "Distribuição de canais diversificada com pequenos valores em boleto e espécie"
+        "flag_fracionamento ativada",
+        "múltiplas transações de valores semelhantes em curto intervalo de tempo",
+        "uso predominante de TED combinado com PIX e outros canais",
+        "concentração de volume elevado em poucos dias"
       ],
-      "justificativa": "O cliente apresenta padrão de fracionamento de transações, com múltiplas operações de valores próximos ao limite de reporte distribuídas em diferentes canais, especialmente TED para volumes elevados. A recorrência de transferências enviadas e depósitos, bem como a presença de contrapartes frequentes, reforça a suspeita de estruturação para ocultar a origem ou destino dos recursos."
+      "justificativa": "O cliente realizou 16 operações totalizando R$191.385,77, com média de R$11.961,61. Na data mais recente (26/05/2026) foram efetuadas 4 operações de alto valor (entre R$14.326,29 e R$19.418,96) em poucos minutos, todas via TED ou PIX. O padrão de fracionamento está presente, com múltiplas transações de valores próximos, indicando tentativa de evitar limites de reporte. Embora não haja indícios de valores atípicos ou contrapartes de alto risco, a combinação de estruturação, uso de diversos canais e volume concentrado eleva o risco para médio, recomendando monitoramento adicional e possível solicitação de esclarecimentos ao cliente."
     },
     "erro_parsing": null,
     "texto_bruto": null,
@@ -320,14 +321,21 @@
         }
       },
       {
+        "tool": "operacoes_do_dia",
+        "args": {
+          "cliente_id": "CLI-029",
+          "data": "2026-05-26"
+        }
+      },
+      {
         "tool": "perfil_canal",
         "args": {
           "cliente_id": "CLI-029"
         }
       }
     ],
-    "tokens_total": 2800,
-    "latencia_s": 5.07,
+    "tokens_total": 2738,
+    "latencia_s": 15.54,
     "flags_deterministicas": {
       "flag_fracionamento": true,
       "flag_valor_atipico": false
@@ -339,14 +347,14 @@
     "cliente_id": "CLI-017",
     "parecer": {
       "nivel_risco": "medio",
-      "tipologia_suspeita": "Fragmentação de valores (smurfing) via múltiplas transferências PIX/TED",
+      "tipologia_suspeita": "Estruturação de transações abaixo do limite de reporte",
       "red_flags": [
         "Flag de fracionamento ativada",
-        "Alta concentração de operações em PIX (6 de 13) próximas ao limite de reporte",
-        "Múltiplas transferências de valores semelhantes (~R$9k) em curto período",
-        "Uso de diferentes canais (PIX, TED, boleto) para distribuir o volume total"
+        "Operações recorrentes próximas ao limite de reporte (≈ R$9.5k)",
+        "Uso de canal de cartão para transferência",
+        "Diversificação de contrapartes sem justificativa clara"
       ],
-      "justificativa": "O cliente realizou 13 operações no período analisado, totalizando R$121.391,37, com valor médio próximo ao limite de reporte (≈R$9,3k). A predominância de transações PIX (46% das operações) e a presença da flag de fracionamento indicam tentativa de dividir valores para evitar detecção. Embora não haja valores atípicos isolados, o padrão de múltiplas transferências de montantes semelhantes através de diferentes canais caracteriza a tipologia de smurfing, justificando um risco médio."
+      "justificativa": "O cliente apresenta padrão de múltiplas transferências enviadas com valores próximos ao limite de reporte (cerca de R$9.5 mil), indicando possível tentativa de evitar a comunicação de operações. A flag de fracionamento já está ativada e a última operação foi realizada via canal de cartão, o que é atípico para transferências, reforçando a suspeita de estruturação. Não há indícios de valores atípicos extremos, mas o conjunto de comportamentos sugere risco médio de lavagem de dinheiro."
     },
     "erro_parsing": null,
     "texto_bruto": null,
@@ -361,18 +369,12 @@
         "tool": "operacoes_do_dia",
         "args": {
           "cliente_id": "CLI-017",
-          "data": "2026-04-15"
-        }
-      },
-      {
-        "tool": "perfil_canal",
-        "args": {
-          "cliente_id": "CLI-017"
+          "data": "2026-05-24"
         }
       }
     ],
-    "tokens_total": 4148,
-    "latencia_s": 18.79,
+    "tokens_total": 3098,
+    "latencia_s": 9.71,
     "flags_deterministicas": {
       "flag_fracionamento": true,
       "flag_valor_atipico": false
@@ -384,14 +386,15 @@
     "cliente_id": "CLI-030",
     "parecer": {
       "nivel_risco": "alto",
-      "tipologia_suspeita": "Transferências eletrônicas de alto valor (TED) para contrapartes empresariais",
+      "tipologia_suspeita": "Transferência de valores elevados via TED para terceiros (possível camada de lavagem)",
       "red_flags": [
         "Flag de valor atípico ativada",
-        "Concentração de volume significativo em poucas operações TED",
-        "Uso predominante de canal PIX combinado com grandes TEDs",
-        "Concentração de contrapartes em poucas empresas (ex.: Quartzo Distribuidora LTDA)"
+        "Concentração de volume significativo em TED (R$85.5k em 2 operações)",
+        "Poucas operações (9) com volume total elevado (R$117.8k)",
+        "Uso de múltiplos canais, incluindo espécie e boleto, indicando tentativa de diversificação",
+        "Contrapartes corporativas diversas, sem padrão claro"
       ],
-      "justificativa": "O cliente realizou apenas 9 operações, porém o volume total de R$117.780,89 está fortemente concentrado em duas transferências TED que somam R$85.546,51, valores muito acima da média e mediana das demais transações. A presença da flag de valor atípico, a concentração em poucas contrapartes empresariais e o uso de múltiplos canais (PIX, TED, espécie) indicam potencial de movimentação de recursos para fins de lavagem de dinheiro, justificando a classificação de risco alto."
+      "justificativa": "O cliente apresenta um volume total alto concentrado em poucas operações, especialmente duas transferências TED que representam mais de 70% do total, o que é atípico em relação à média e mediana. A presença de valores atípicos, a combinação de canais (PIX, TED, espécie, boleto) e a falta de fracionamento sugerem tentativa de movimentar grandes quantias de forma discreta, caracterizando risco elevado de lavagem de dinheiro."
     },
     "erro_parsing": null,
     "texto_bruto": null,
@@ -409,8 +412,8 @@
         }
       }
     ],
-    "tokens_total": 2765,
-    "latencia_s": 9.34,
+    "tokens_total": 2880,
+    "latencia_s": 10.69,
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
