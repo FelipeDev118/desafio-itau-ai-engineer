@@ -1,0 +1,11 @@
+cliente_id,volume_total_brl,qtd_operacoes,sinalizacoes_fracionamento,sinalizacoes_valor_atipico,total_sinalizacoes
+CLI-014,80629.99,11,0,3,3
+CLI-023,148535.016,12,0,2,2
+CLI-028,88750.8,12,0,2,2
+CLI-013,81730.99,10,0,2,2
+CLI-005,64742.66,11,0,2,2
+CLI-026,54729.28,12,0,2,2
+CLI-001,47947.81,10,0,2,2
+CLI-029,191385.766,16,1,0,1
+CLI-017,121391.37,13,1,0,1
+CLI-030,117780.886,9,0,1,1
