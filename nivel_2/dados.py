@@ -1,0 +1,98 @@
+"""Carregamento, limpeza e regras determinísticas — mesma lógica do Nível 1,
+reaproveitada aqui sobre a base maior (~320 operações, 30 clientes).
+
+Ver docs/DECISOES.md para a justificativa de cada tratamento (duplicatas, datas
+nulas, conversão de moeda) — é a mesma do Nível 1, só que agora encapsulada em
+funções para reuso pelas ferramentas, pelo agente e pelo script de confronto.
+"""
+import json
+from pathlib import Path
+
+import pandas as pd
+
+DADOS_PATH = Path(__file__).resolve().parent.parent / "dados" / "dados_nivel_2.json"
+
+
+def carregar_e_limpar(path: Path = DADOS_PATH) -> tuple[pd.DataFrame, float]:
+    with open(path, encoding="utf-8") as f:
+        raw = json.load(f)
+
+    taxa = raw["taxa_cambio_usd_brl"]
+    df = pd.DataFrame(raw["operacoes"])
+
+    df = df.drop_duplicates(subset=["id"]).copy()
+    df["data"] = pd.to_datetime(df["data"], errors="coerce")
+    df["data_valida"] = df["data"].notna()
+    df["valor_brl"] = df.apply(
+        lambda r: r["valor"] * taxa if r["moeda"] == "USD" else r["valor"],
+        axis=1,
+    )
+    return df, taxa
+
+
+def flag_fracionamento(df: pd.DataFrame) -> pd.DataFrame:
+    elegivel = df[df["data_valida"]]
+    grp = elegivel.groupby(["cliente_id", "data"])["valor_brl"]
+    candidatos = pd.DataFrame(
+        {"soma": grp.sum(), "qtd": grp.count(), "max_individual": grp.max()}
+    ).reset_index()
+    return candidatos[
+        (candidatos["qtd"] >= 3)
+        & (candidatos["soma"] > 50000)
+        & (candidatos["max_individual"] < 20000)
+    ]
+
+
+def flag_valor_atipico(df: pd.DataFrame) -> pd.DataFrame:
+    contagem = df.groupby("cliente_id")["id"].transform("count")
+    elegivel = df[contagem >= 4].copy()
+    mediana = elegivel.groupby("cliente_id")["valor_brl"].transform("median")
+    elegivel["limite_atipico"] = mediana * 5
+    elegivel["atipico"] = elegivel["valor_brl"] > elegivel["limite_atipico"]
+    return elegivel[["id", "cliente_id", "valor_brl", "limite_atipico", "atipico"]]
+
+
+def aplicar_regras(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    fracionamento = flag_fracionamento(df)
+    clientes_fracionamento = set(fracionamento["cliente_id"])
+    df["flag_fracionamento"] = df["cliente_id"].isin(clientes_fracionamento)
+
+    atipicos = flag_valor_atipico(df)
+    df = df.merge(
+        atipicos[["id", "atipico"]].rename(columns={"atipico": "flag_valor_atipico"}),
+        on="id",
+        how="left",
+    )
+    df["flag_valor_atipico"] = df["flag_valor_atipico"].fillna(False)
+    return df
+
+
+def ranking_clientes_sinalizados(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
+    """Nº de sinalizações por cliente (operação com flag_valor_atipico=True conta 1,
+    cliente com flag_fracionamento=True conta 1 sinalização de cliente), desempate por
+    volume total. Ver DECISOES.md para o critério de contagem."""
+    por_cliente = df.groupby("cliente_id").agg(
+        volume_total_brl=("valor_brl", "sum"),
+        qtd_operacoes=("id", "count"),
+        sinalizacoes_fracionamento=("flag_fracionamento", "max"),
+        sinalizacoes_valor_atipico=("flag_valor_atipico", "sum"),
+    )
+    por_cliente["sinalizacoes_fracionamento"] = por_cliente[
+        "sinalizacoes_fracionamento"
+    ].astype(int)
+    por_cliente["total_sinalizacoes"] = (
+        por_cliente["sinalizacoes_fracionamento"]
+        + por_cliente["sinalizacoes_valor_atipico"]
+    )
+    ranking = por_cliente[por_cliente["total_sinalizacoes"] > 0].sort_values(
+        ["total_sinalizacoes", "volume_total_brl"], ascending=[False, False]
+    )
+    return ranking.head(top_n).reset_index()
+
+
+if __name__ == "__main__":
+    df, taxa = carregar_e_limpar()
+    df = aplicar_regras(df)
+    top10 = ranking_clientes_sinalizados(df)
+    print(top10)
