@@ -28,14 +28,43 @@
     ],
     "tokens_total": 3252,
     "latencia_s": 3.33,
-    "cache_hit": false,
+    "cache_hit": true,
     "hash_entrada": "d3101af725c65eb9",
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
     },
     "volume_total_brl": 80629.99,
-    "total_sinalizacoes_deterministicas": 3
+    "total_sinalizacoes_deterministicas": 3,
+    "aderencia": {
+      "fundamentado": false,
+      "motivo": "valores citados como atipicos que NAO tem flag_valor_atipico: [9157.8] - o numero existe na base, mas o parecer o usa no contexto errado",
+      "valores_confirmados": [
+        {
+          "valor": 80629.99,
+          "fonte": "volume_total_cliente"
+        },
+        {
+          "valor": 7330.0,
+          "fonte": "media_cliente"
+        },
+        {
+          "valor": 2308.41,
+          "fonte": "operacao OP-00127"
+        },
+        {
+          "valor": 9157.8,
+          "fonte": "operacao OP-00132"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": [
+        {
+          "valor": 9157.8,
+          "fonte": "operacao OP-00132"
+        }
+      ]
+    }
   },
   {
     "cliente_id": "CLI-023",
@@ -72,14 +101,18 @@
     ],
     "tokens_total": 4288,
     "latencia_s": 26.29,
-    "cache_hit": false,
+    "cache_hit": true,
     "hash_entrada": "0243950095830862",
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
     },
     "volume_total_brl": 148535.02,
-    "total_sinalizacoes_deterministicas": 2
+    "total_sinalizacoes_deterministicas": 2,
+    "aderencia": {
+      "fundamentado": false,
+      "motivo": "sem parecer para verificar"
+    }
   },
   {
     "cliente_id": "CLI-028",
@@ -118,14 +151,38 @@
     ],
     "tokens_total": 2709,
     "latencia_s": 23.09,
-    "cache_hit": false,
+    "cache_hit": true,
     "hash_entrada": "9c85d3cda990ad88",
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
     },
     "volume_total_brl": 88750.8,
-    "total_sinalizacoes_deterministicas": 2
+    "total_sinalizacoes_deterministicas": 2,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "4/4 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 88750.8,
+          "fonte": "volume_total_cliente"
+        },
+        {
+          "valor": 7395.9,
+          "fonte": "media_cliente"
+        },
+        {
+          "valor": 6913.84,
+          "fonte": "operacao OP-00269"
+        },
+        {
+          "valor": 4430.25,
+          "fonte": "mediana_cliente"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
   },
   {
     "cliente_id": "CLI-013",
@@ -156,14 +213,35 @@
     ],
     "tokens_total": 1644,
     "latencia_s": 10.85,
-    "cache_hit": false,
+    "cache_hit": true,
     "hash_entrada": "4fc8b0e6f62b56f8",
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
     },
     "volume_total_brl": 81730.99,
-    "total_sinalizacoes_deterministicas": 2
+    "total_sinalizacoes_deterministicas": 2,
+    "aderencia": {
+      "fundamentado": false,
+      "motivo": "valores citados como atipicos que NAO tem flag_valor_atipico: [312.54] - o numero existe na base, mas o parecer o usa no contexto errado",
+      "valores_confirmados": [
+        {
+          "valor": 8173.1,
+          "fonte": "media_cliente"
+        },
+        {
+          "valor": 312.54,
+          "fonte": "operacao OP-00123"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": [
+        {
+          "valor": 312.54,
+          "fonte": "operacao OP-00123"
+        }
+      ]
+    }
   },
   {
     "cliente_id": "CLI-005",
@@ -200,14 +278,18 @@
     ],
     "tokens_total": 3940,
     "latencia_s": 20.12,
-    "cache_hit": false,
+    "cache_hit": true,
     "hash_entrada": "6d1d4e99f3d5224a",
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
     },
     "volume_total_brl": 64742.66,
-    "total_sinalizacoes_deterministicas": 2
+    "total_sinalizacoes_deterministicas": 2,
+    "aderencia": {
+      "fundamentado": false,
+      "motivo": "sem parecer para verificar"
+    }
   },
   {
     "cliente_id": "CLI-026",
@@ -240,14 +322,26 @@
     ],
     "tokens_total": 2975,
     "latencia_s": 9.77,
-    "cache_hit": false,
+    "cache_hit": true,
     "hash_entrada": "bb1d61d87131276d",
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
     },
     "volume_total_brl": 54729.28,
-    "total_sinalizacoes_deterministicas": 2
+    "total_sinalizacoes_deterministicas": 2,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "1/1 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 21261.01,
+          "fonte": "operacao OP-00253"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
   },
   {
     "cliente_id": "CLI-001",
@@ -280,14 +374,35 @@
     ],
     "tokens_total": 1631,
     "latencia_s": 11.93,
-    "cache_hit": false,
+    "cache_hit": true,
     "hash_entrada": "a95f0c74714f48ed",
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
     },
     "volume_total_brl": 47947.81,
-    "total_sinalizacoes_deterministicas": 2
+    "total_sinalizacoes_deterministicas": 2,
+    "aderencia": {
+      "fundamentado": false,
+      "motivo": "valores citados como atipicos que NAO tem flag_valor_atipico: [5016.62] - o numero existe na base, mas o parecer o usa no contexto errado",
+      "valores_confirmados": [
+        {
+          "valor": 5016.62,
+          "fonte": "operacao OP-00007"
+        },
+        {
+          "valor": 1609.15,
+          "fonte": "mediana_cliente"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": [
+        {
+          "valor": 5016.62,
+          "fonte": "operacao OP-00007"
+        }
+      ]
+    }
   },
   {
     "cliente_id": "CLI-029",
@@ -320,7 +435,7 @@
     ],
     "tokens_total": 1737,
     "latencia_s": 11.38,
-    "cache_hit": false,
+    "cache_hit": true,
     "hash_entrada": "2a9ee2bcb8d03052",
     "flags_deterministicas": {
       "flag_fracionamento": true,
@@ -330,7 +445,19 @@
       ]
     },
     "volume_total_brl": 191385.77,
-    "total_sinalizacoes_deterministicas": 1
+    "total_sinalizacoes_deterministicas": 1,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "1/1 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 71297.68,
+          "fonte": "soma_do_dia_2026-05-26"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
   },
   {
     "cliente_id": "CLI-017",
@@ -358,7 +485,7 @@
     ],
     "tokens_total": 2042,
     "latencia_s": 6.16,
-    "cache_hit": false,
+    "cache_hit": true,
     "hash_entrada": "31a5586c026946e8",
     "flags_deterministicas": {
       "flag_fracionamento": true,
@@ -368,7 +495,19 @@
       ]
     },
     "volume_total_brl": 121391.37,
-    "total_sinalizacoes_deterministicas": 1
+    "total_sinalizacoes_deterministicas": 1,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "1/1 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 64673.88,
+          "fonte": "soma_do_dia_2026-03-08"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
   },
   {
     "cliente_id": "CLI-030",
@@ -405,13 +544,17 @@
     ],
     "tokens_total": 3952,
     "latencia_s": 18.25,
-    "cache_hit": false,
+    "cache_hit": true,
     "hash_entrada": "adbf184447458a31",
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
     },
     "volume_total_brl": 117780.89,
-    "total_sinalizacoes_deterministicas": 1
+    "total_sinalizacoes_deterministicas": 1,
+    "aderencia": {
+      "fundamentado": false,
+      "motivo": "sem parecer para verificar"
+    }
   }
 ]

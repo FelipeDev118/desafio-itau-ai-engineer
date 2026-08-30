@@ -16,6 +16,7 @@ from agente import rodar_agente
 from cache_parecer import CacheParecer
 from dados import aplicar_regras, carregar_e_limpar, montar_flags, ranking_clientes_sinalizados
 from observabilidade import Coletor
+from verificacao_aderencia import verificar
 
 OUTPUTS_DIR = Path(__file__).resolve().parent.parent / "outputs"
 
@@ -41,6 +42,25 @@ def main(usar_cache: bool = True):
         resultado["flags_deterministicas"] = flags
         resultado["volume_total_brl"] = round(float(row["volume_total_brl"]), 2)
         resultado["total_sinalizacoes_deterministicas"] = int(row["total_sinalizacoes"])
+
+        # Grounding check: o parecer cita numeros que existem de fato na base deste
+        # cliente? Roda depois do cache de proposito - um parecer cacheado tambem
+        # precisa ser auditado, e a verificacao e barata (sem LLM).
+        if resultado.get("parecer"):
+            aderencia = verificar(cliente_id, resultado["parecer"]["justificativa"], df)
+            resultado["aderencia"] = {
+                "fundamentado": aderencia.fundamentado,
+                "motivo": aderencia.motivo,
+                "valores_confirmados": aderencia.valores_confirmados,
+                "valores_nao_encontrados": aderencia.valores_nao_encontrados,
+                "atipicos_incorretos": aderencia.atipicos_incorretos,
+            }
+        else:
+            resultado["aderencia"] = {
+                "fundamentado": False,
+                "motivo": "sem parecer para verificar",
+            }
+
         resultados.append(resultado)
         if not resultado["cache_hit"]:
             time.sleep(8)  # respeitar rate limit de tokens/minuto do free tier - so entre chamadas reais
@@ -102,6 +122,21 @@ def main(usar_cache: bool = True):
     print(f"\nProjecao 30 clientes:      US$ {resumo['projecao_30_clientes_usd']:.6f}")
     print(f"Projecao 10.000 clientes:  US$ {resumo['projecao_10k_clientes_usd']:.2f}")
     print(f"Respostas malformadas: {metricas['erro_parsing'].notna().sum()} / {len(metricas)}")
+
+    # --- Aderencia do parecer aos dados (grounding check, sem LLM) ---
+    aderencia_df = pd.DataFrame([
+        {"cliente_id": r["cliente_id"], **r["aderencia"]} for r in resultados
+    ])
+    aderencia_df.to_csv(OUTPUTS_DIR / "aderencia_pareceres.csv", index=False)
+
+    com_parecer = aderencia_df[aderencia_df["motivo"] != "sem parecer para verificar"]
+    n_fund = int(com_parecer["fundamentado"].sum()) if len(com_parecer) else 0
+    print(f"\n--- Aderencia aos dados ---")
+    print(f"Pareceres fundamentados: {n_fund}/{len(com_parecer)} "
+          "(valores citados conferem com a base do cliente)")
+    nao_fund = com_parecer[~com_parecer["fundamentado"]]
+    for _, row in nao_fund.iterrows():
+        print(f"  {row['cliente_id']}: {row['motivo']}")
     print(f"\nSalvo em {OUTPUTS_DIR}: pareceres_lote.json, metricas_lote.csv, "
           "chamadas_llm.csv, custo_resumo.json")
 

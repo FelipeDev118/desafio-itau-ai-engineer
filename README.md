@@ -123,3 +123,10 @@ python nivel_3/comparar_transportes.py     # valida MCP vs. import direto
   sem grounding). `confronto.py` agora separa `respostas_validas` de
   `taxa_concordancia_entre_validas` — a taxa de resposta válida virou um número auditável por si
   só, não escondido dentro da concordância.
+- **O achado mais forte de todos**: uma verificação de aderência sem LLM
+  (`nivel_2/verificacao_aderencia.py`) confere se os valores citados na justificativa existem de
+  fato na base do cliente — e revelou que **3 dos 7 pareceres válidos estavam fundamentados na
+  operação errada**. `CLI-013` chamou de "atípica" uma operação de R$ 312,54, a *menor* da base
+  daquele cliente, quando as realmente sinalizadas eram de R$ 28.487,76 e R$ 26.754,23. Nenhum
+  desses erros é perceptível lendo o texto — todos soam plausíveis. Resultado em
+  [`outputs/aderencia_pareceres.csv`](outputs/aderencia_pareceres.csv).

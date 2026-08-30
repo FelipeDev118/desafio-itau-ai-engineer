@@ -232,6 +232,51 @@ individual ao modelo continua não-determinística. A correção completa (persi
 registro histórico datado e imutável, nunca recalculável, mesmo limpando cache) é mais estrutural
 e não coube no tempo — ver seção 3.
 
+## Verificação de aderência: o parecer cita números que existem de verdade?
+
+O problema que motivou isto: numa execução anterior, o parecer de `CLI-005` citou "a operação de
+2024-05-07 (R$ 409,16)" como a operação atípica. Bem escrito, com números, soando técnico — e
+errado em dois níveis (o ano é 2026, e R$ 409,16 está *abaixo* da mediana do cliente, não é a
+operação sinalizada). Um analista lendo só a justificativa não teria como perceber.
+
+**O que implementei** (`nivel_2/verificacao_aderencia.py`): um *grounding check* determinístico
+que roda depois do agente e antes de gravar o parecer. Extrai da `justificativa` todo valor em
+R$ e confere contra os dados reais do cliente — operações individuais, somas por data e
+agregados (soma/média/mediana). **Deliberadamente sem LLM**: usar um modelo para auditar outro
+reintroduziria exatamente o problema que estamos tentando pegar.
+
+**A parte que só apareceu ao validar contra dados reais** — e que mudou o desenho: checar
+*existência* não basta. No caso `CLI-005`, R$ 409,16 **existe** na base (é a operação
+`OP-00041`), então uma verificação ingênua o aprovaria. O erro não foi inventar o número, foi
+**usá-lo no contexto errado**. Por isso a verificação também confere contexto: quando o texto
+liga um valor à palavra "atípic*", esse valor precisa ser de uma operação com
+`flag_valor_atipico=True`. Foi o que finalmente pegou o erro pelo motivo certo.
+
+**Dois falsos positivos encontrados e corrigidos na validação**, ambos instrutivos:
+- *Somas por data*: `CLI-029` citava "4 operações em 26/05, totalizando R$ 71.297,68" — valor
+  legítimo que eu não sabia procurar, porque só checava agregados do cliente inteiro. Somas
+  diárias entraram como referência válida.
+- *Limiares textuais*: `CLI-013` dizia "valores superiores a R$ 3.000" — isso é uma qualificação
+  vaga, não uma transação citada. Filtrados por palavras-gatilho ("superior a", "acima de",
+  "cerca de"…) antes do valor.
+- Também precisei aceitar que o modelo escreve valor **sem `R$`**, com sufixo `BRL`, e em
+  formato numérico inconsistente entre chamadas (`21.261,01 BRL` em padrão BR, `5016.62 BRL`
+  em padrão americano) — o parser decide o formato pela presença de vírgula.
+
+**O resultado, que é o achado mais forte desta rodada**: dos 7 pareceres válidos do lote,
+**3 estavam fundamentados na operação errada** — `CLI-014`, `CLI-013` e `CLI-001` apontaram como
+"atípica" uma operação sem a flag. O caso `CLI-013` é o mais gritante: chamou de atípica uma
+operação de **R$ 312,54**, a menor da base do cliente, quando as realmente sinalizadas são de
+R$ 28.487,76 e R$ 26.754,23. Nenhum desses erros é perceptível lendo o texto — todos soam
+plausíveis. É a evidência mais concreta de por que a camada determinística não pode ser
+substituída pelo LLM: ela é o que permite **auditar** o modelo.
+
+**Limite honesto desta verificação**: ela confere existência e um contexto específico
+("atípico"), não o raciocínio inteiro. Um parecer pode citar todos os números corretos e ainda
+assim concluir mal — isso ela não pega. E o filtro de contexto é baseado em palavra-chave, então
+uma frase que descreva atipicidade sem usar a palavra escapa. É uma rede de segurança barata e
+sem LLM, não um juiz completo.
+
 ## O agente não usava `operacoes_do_dia` nos casos de fracionamento — corrigido
 
 Achado da auditoria original: 7 clientes *sem* `flag_fracionamento` chamavam
@@ -311,26 +356,6 @@ estrutural não substitui sanitização de texto.
 ---
 
 # 3. O que faria com mais tempo
-
-## Verificação de aderência do parecer aos dados (prioridade 1)
-
-Numa execução anterior, o parecer de `CLI-005` citou uma operação (R$ 409,16) que não é a
-sinalizada pela Regra 2 — bem escrito, plausível, e errado. É o problema mais grave encontrado
-nesta entrega, porque passa despercebido por revisão humana, e a não-reprodutibilidade descrita
-acima (a mesma pergunta rendendo parecer certo numa vez e errado noutra) o torna imprevisível.
-
-**Arquitetura**: uma etapa de *grounding check* determinística entre o agente e a gravação do
-parecer. Ela extrai da `justificativa` toda referência verificável (IDs de operação, valores em
-R$, datas) e confere contra as operações reais daquele cliente; o parecer só é aceito se as
-referências existirem, e é marcado como `nao_fundamentado` caso contrário.
-
-**Ferramenta**: regex para extrair valores/datas/IDs + comparação contra o DataFrame já em
-memória. Deliberadamente **sem LLM** — usar um modelo para auditar outro reintroduz o problema.
-
-**Como validaria**: `CLI-005` é o caso de teste pronto. A verificação tem que reprovar o parecer
-que cita R$ 409,16 (valor existe, mas não está entre as operações sinalizadas) e aprovar o de
-`CLI-030`, que cita R$ 85.546,51 corretamente. Mediria falsos positivos rodando sobre os 10
-pareceres e conferindo à mão.
 
 ## Reprodutibilidade do parecer — implementado parcialmente, o resto documentado aqui
 
