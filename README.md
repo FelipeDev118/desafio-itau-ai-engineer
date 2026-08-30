@@ -111,3 +111,7 @@ python nivel_3/comparar_transportes.py     # valida MCP vs. import direto
   padrão que disparou a regra e classifica abaixo assim mesmo — um limiar mais conservador para
   "alto", não um erro de fato. Análise em
   [`docs/DECISOES.md`](docs/DECISOES.md#nível-2--confronto-regra-vs-modelo).
+- **Cache por hash de entrada** (`nivel_2/cache_parecer.py`) resolve essa instabilidade *entre
+  reexecuções do pipeline*: parecer já gerado é reaproveitado em vez de recalculado. Provado, não
+  só afirmado — rodar `lote.py` a 3ª vez levou 1,3s com **0 chamadas de API** (a 1ª levou 3min47),
+  e `confronto.py` passou a dar o mesmo número em execuções seguidas.

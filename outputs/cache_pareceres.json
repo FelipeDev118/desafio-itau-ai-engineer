@@ -1,5 +1,5 @@
-[
-  {
+{
+  "0885d9dbf572d19c": {
     "cliente_id": "CLI-014",
     "parecer": {
       "nivel_risco": "medio",
@@ -29,7 +29,7 @@
     ],
     "tokens_total": 1464,
     "latencia_s": 2.9,
-    "cache_hit": true,
+    "cache_hit": false,
     "hash_entrada": "0885d9dbf572d19c",
     "flags_deterministicas": {
       "flag_fracionamento": false,
@@ -38,7 +38,7 @@
     "volume_total_brl": 80629.99,
     "total_sinalizacoes_deterministicas": 3
   },
-  {
+  "f0850ffd92e992f8": {
     "cliente_id": "CLI-023",
     "parecer": {
       "nivel_risco": "medio",
@@ -76,7 +76,7 @@
     ],
     "tokens_total": 4361,
     "latencia_s": 8.03,
-    "cache_hit": true,
+    "cache_hit": false,
     "hash_entrada": "f0850ffd92e992f8",
     "flags_deterministicas": {
       "flag_fracionamento": false,
@@ -85,7 +85,7 @@
     "volume_total_brl": 148535.02,
     "total_sinalizacoes_deterministicas": 2
   },
-  {
+  "904ce3477f09d9f1": {
     "cliente_id": "CLI-028",
     "parecer": {
       "nivel_risco": "alto",
@@ -122,7 +122,7 @@
     ],
     "tokens_total": 3638,
     "latencia_s": 22.18,
-    "cache_hit": true,
+    "cache_hit": false,
     "hash_entrada": "904ce3477f09d9f1",
     "flags_deterministicas": {
       "flag_fracionamento": false,
@@ -131,7 +131,7 @@
     "volume_total_brl": 88750.8,
     "total_sinalizacoes_deterministicas": 2
   },
-  {
+  "6261212609b8b375": {
     "cliente_id": "CLI-013",
     "parecer": {
       "nivel_risco": "alto",
@@ -169,7 +169,7 @@
     ],
     "tokens_total": 3744,
     "latencia_s": 14.91,
-    "cache_hit": true,
+    "cache_hit": false,
     "hash_entrada": "6261212609b8b375",
     "flags_deterministicas": {
       "flag_fracionamento": false,
@@ -178,7 +178,7 @@
     "volume_total_brl": 81730.99,
     "total_sinalizacoes_deterministicas": 2
   },
-  {
+  "cbd1d7d1234f2c0e": {
     "cliente_id": "CLI-005",
     "parecer": {
       "nivel_risco": "medio",
@@ -216,7 +216,7 @@
     ],
     "tokens_total": 4537,
     "latencia_s": 19.76,
-    "cache_hit": true,
+    "cache_hit": false,
     "hash_entrada": "cbd1d7d1234f2c0e",
     "flags_deterministicas": {
       "flag_fracionamento": false,
@@ -225,7 +225,7 @@
     "volume_total_brl": 64742.66,
     "total_sinalizacoes_deterministicas": 2
   },
-  {
+  "12a14cc2f10c9d87": {
     "cliente_id": "CLI-026",
     "parecer": {
       "nivel_risco": "alto",
@@ -263,7 +263,7 @@
     ],
     "tokens_total": 3948,
     "latencia_s": 25.74,
-    "cache_hit": true,
+    "cache_hit": false,
     "hash_entrada": "12a14cc2f10c9d87",
     "flags_deterministicas": {
       "flag_fracionamento": false,
@@ -272,7 +272,7 @@
     "volume_total_brl": 54729.28,
     "total_sinalizacoes_deterministicas": 2
   },
-  {
+  "d54848665d76fd3d": {
     "cliente_id": "CLI-001",
     "parecer": {
       "nivel_risco": "medio",
@@ -310,7 +310,7 @@
     ],
     "tokens_total": 2360,
     "latencia_s": 18.26,
-    "cache_hit": true,
+    "cache_hit": false,
     "hash_entrada": "d54848665d76fd3d",
     "flags_deterministicas": {
       "flag_fracionamento": false,
@@ -319,7 +319,7 @@
     "volume_total_brl": 47947.81,
     "total_sinalizacoes_deterministicas": 2
   },
-  {
+  "73b6df1a0151f592": {
     "cliente_id": "CLI-029",
     "parecer": {
       "nivel_risco": "medio",
@@ -350,7 +350,7 @@
     ],
     "tokens_total": 2926,
     "latencia_s": 16.45,
-    "cache_hit": true,
+    "cache_hit": false,
     "hash_entrada": "73b6df1a0151f592",
     "flags_deterministicas": {
       "flag_fracionamento": true,
@@ -359,7 +359,7 @@
     "volume_total_brl": 191385.77,
     "total_sinalizacoes_deterministicas": 1
   },
-  {
+  "06baa772966a9b62": {
     "cliente_id": "CLI-017",
     "parecer": {
       "nivel_risco": "medio",
@@ -391,7 +391,7 @@
     ],
     "tokens_total": 2911,
     "latencia_s": 2.75,
-    "cache_hit": true,
+    "cache_hit": false,
     "hash_entrada": "06baa772966a9b62",
     "flags_deterministicas": {
       "flag_fracionamento": true,
@@ -400,7 +400,7 @@
     "volume_total_brl": 121391.37,
     "total_sinalizacoes_deterministicas": 1
   },
-  {
+  "a444011c7c3e00c3": {
     "cliente_id": "CLI-030",
     "parecer": {
       "nivel_risco": "medio",
@@ -433,13 +433,7 @@
     ],
     "tokens_total": 3074,
     "latencia_s": 14.14,
-    "cache_hit": true,
-    "hash_entrada": "a444011c7c3e00c3",
-    "flags_deterministicas": {
-      "flag_fracionamento": false,
-      "flag_valor_atipico": true
-    },
-    "volume_total_brl": 117780.89,
-    "total_sinalizacoes_deterministicas": 1
+    "cache_hit": false,
+    "hash_entrada": "a444011c7c3e00c3"
   }
-]
+}

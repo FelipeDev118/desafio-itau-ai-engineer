@@ -75,10 +75,22 @@ class Coletor:
         return pd.DataFrame([asdict(c) for c in self.chamadas])
 
     def resumo(self) -> dict:
-        """Agregacoes em pandas - o enunciado pede explicitamente 'analise os totais com pandas'."""
+        """Agregacoes em pandas - o enunciado pede explicitamente 'analise os totais com pandas'.
+
+        df vazio acontece de proposito quando o cache atende 100% dos clientes (nenhuma
+        chamada de API foi feita) - nao e caso de erro, e o cenario ideal. Retorna zeros
+        em vez de {} para nao quebrar quem consome o resumo esperando as mesmas chaves."""
         df = self.para_dataframe()
         if df.empty:
-            return {}
+            return {
+                "chamadas_api": 0, "clientes": 0, "chamadas_por_cliente": 0.0,
+                "tokens_entrada": 0, "tokens_saida": 0, "tokens_total": 0,
+                "custo_total_usd": 0.0, "custo_medio_por_cliente_usd": 0.0,
+                "latencia_total_s": 0.0, "latencia_media_por_chamada_s": 0.0,
+                "latencia_p95_s": 0.0, "chamada_mais_cara_usd": 0.0,
+                "por_tipo_turno": {}, "por_cliente": {},
+                "projecao_30_clientes_usd": 0.0, "projecao_10k_clientes_usd": 0.0,
+            }
 
         por_tipo = df.groupby("tipo_turno").agg(
             chamadas=("turno", "count"),

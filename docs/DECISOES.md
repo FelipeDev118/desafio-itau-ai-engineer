@@ -204,15 +204,33 @@ e ninguém percebe; com o volume real de um banco isso não roda. A correção n
 e sim mudar a fronteira: as ferramentas deveriam consultar um *store* já materializado
 (banco de dados com índice por `cliente_id` e por data), não reprocessar o arquivo bruto.
 
-## O parecer não é reproduzível — e em PLD isso é problema de compliance
+## O LLM não é determinístico — mitigado com cache, não resolvido na raiz
 
 A comparação entre transportes (Nível 3) expôs isto sem que eu procurasse: **o mesmo agente, com
 as mesmas ferramentas e os mesmos dados, atribuiu `nivel_risco` diferente para 4 de 10 clientes
-entre duas execuções**. `CLI-014` saiu `alto` numa e `médio` na outra, com `temperature=0.2`.
+entre duas execuções**. `CLI-014` saiu `alto` numa e `médio` na outra, com `temperature=0.2`. O
+problema voltou a aparecer depois: rodar o lote de novo só para instrumentar custo
+(`nivel_2/observabilidade.py`) regenerou os pareceres e a concordância regra-vs-agente caiu de
+50% para 30% — mesmo código, mesmos dados.
 
-Uma classificação de risco precisa ser auditável: um analista tem que poder explicar por que o
-cliente foi classificado como alto risco *naquela data*, e reexecutar deveria chegar ao mesmo
-lugar. Não chega. Ver a correção proposta na seção 3.
+**O que implementei** (`nivel_2/cache_parecer.py`): parar de tratar "gerar parecer" como função
+que sempre recalcula, e tratar como mapa `hash_da_entrada -> parecer`. O hash cobre
+`cliente_id` + flags determinísticas + um snapshot de `historico_cliente()` (não a base
+inteira) + o modelo + uma versão do prompt (bump manual quando `SYSTEM_PROMPT` muda de
+verdade). Entrada igual → parecer reaproveitado, não regerado.
+
+**Prova, não afirmação**: rodei `lote.py` três vezes seguidas. A primeira levou 3min47 (10
+chamadas reais + espaçamento de rate limit); a segunda e a terceira levaram **1,3 segundo cada,
+com 0 chamadas de API**. `confronto.py` rodado duas vezes em seguida deu **exatamente o mesmo
+40% (4/10)** nas duas — antes, cada execução podia dar um número diferente.
+
+**O que isso não resolve, para ser honesto sobre o limite da correção**: o cache garante que o
+*mesmo caso* não seja recalculado, então a classificação de um cliente já processado fica
+estável entre reexecuções do pipeline. Ele **não** torna o LLM determinístico em si — se eu
+apagar o cache e rodar de novo, o novo parecer pode diferir do anterior, porque a chamada
+individual ao modelo continua não-determinística. A correção completa (persistir o parecer como
+registro histórico datado e imutável, nunca recalculável, mesmo limpando cache) é mais estrutural
+e não coube no tempo — ver seção 3.
 
 ## Pressupostos das regras que dados reais violam
 
@@ -274,20 +292,29 @@ que cita R$ 409,16 (valor existe, mas não está entre as operações sinalizada
 `CLI-030`, que cita R$ 85.546,51 corretamente. Mediria falsos positivos rodando sobre os 10
 pareceres e conferindo à mão.
 
-## Reprodutibilidade do parecer
+## Reprodutibilidade do parecer — implementado parcialmente, o resto documentado aqui
 
-**Arquitetura**: `temperature=0` e `seed` fixo quando o provedor suportar — mas isso é paliativo.
-A correção de verdade é **tratar o parecer como artefato imutável**: persistir cada parecer com o
-hash da entrada (dados + flags + versão do prompt + modelo) que o gerou. A decisão de risco vira
-registro histórico datado, não função recalculável que pode responder diferente amanhã.
+O cache por hash (`nivel_2/cache_parecer.py`, seção 1) resolve a reprodutibilidade **entre
+reexecuções do pipeline** — validado: `confronto.py` deu 40% duas vezes seguidas, contra números
+diferentes a cada rodada antes disso.
 
-**Ferramenta**: SQLite com `hash_entrada` como chave — resolve de uma vez a reprodutibilidade e o
-cache que o enunciado sugere, já que parecer existente para o mesmo hash é reaproveitado em vez
-de repedido.
+O que falta é mais estrutural: o cache de hoje é um arquivo JSON local, que não sobrevive a
+trocar de máquina nem tem noção de "versão" além do bump manual em `VERSAO_PROMPT`. A correção
+completa trataria o parecer como **registro histórico**, não como cache:
 
-**Como validaria**: rodar o lote duas vezes seguidas e exigir 10/10 idênticos — hoje dá 6/10. E
-alterar um único valor da base para confirmar que o hash muda e o parecer é regerado (senão o
-cache estaria mascarando dado novo).
+**Arquitetura**: em vez de `hash -> parecer` sobrescrevível, um log append-only —
+`(hash_entrada, parecer, timestamp, versao_prompt, modelo)` — onde o mesmo hash pode ter múltiplas
+entradas ao longo do tempo (nunca se sobrescreve), e "o parecer atual" é sempre a última entrada
+para aquele hash. Isso responde "por que este cliente foi classificado como alto risco em
+15/03" de forma auditável, mesmo que o parecer tenha mudado depois.
+
+**Ferramenta**: SQLite em vez de JSON — já dá o append-only e a consulta por timestamp de graça,
+e escala melhor que reescrever o arquivo inteiro a cada `salvar()` (o que o `CacheParecer` atual
+faz, aceitável para 30 clientes, não para volume real de um banco).
+
+**Como validaria**: alterar um único valor da base de um cliente já cacheado, rodar de novo, e
+confirmar duas coisas — o hash muda (então o parecer antigo não é reaproveitado por engano) e o
+registro antigo continua consultável por quem precisar da decisão histórica.
 
 ## Corrigir o prompt do agente para informar a data do fracionamento
 

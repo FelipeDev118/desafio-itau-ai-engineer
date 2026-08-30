@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from groq import BadRequestError, Groq, RateLimitError
 from pydantic import BaseModel, ValidationError
 
+from cache_parecer import CacheParecer, calcular_hash
 from dados import aplicar_regras, carregar_e_limpar, ranking_clientes_sinalizados
 from observabilidade import Coletor, calcular_custo_usd
 from tools import TOOLS_SPEC, historico_cliente
@@ -124,7 +125,40 @@ def _chat_com_retry(max_tentativas: int = 5, **kwargs):
 
 
 def rodar_agente(cliente_id: str, flags: dict, max_turnos: int = 4,
-                 coletor: Coletor | None = None) -> dict:
+                 coletor: Coletor | None = None, cache: CacheParecer | None = None) -> dict:
+    """Ponto de entrada publico: consulta o cache antes de chamar o LLM.
+
+    O hash da entrada usa um snapshot de historico_cliente() (nao a base inteira) mais
+    as flags, o modelo e a versao do prompt - se nada disso mudou, o parecer e reaproveitado
+    em vez de regerado. Ver cache_parecer.py para a justificativa completa: isso existe
+    porque medimos, na pratica, o mesmo agente dando nivel_risco diferente para o mesmo
+    cliente entre duas execucoes (docs/DECISOES.md).
+
+    Passar `cache=None` (padrao) desliga o cache e sempre chama o LLM - util para medir
+    a instabilidade de proposito, como fizemos na auditoria."""
+    dados_cliente = historico_cliente(cliente_id)
+    hash_entrada = calcular_hash(cliente_id, flags, dados_cliente, MODEL)
+
+    if cache is not None:
+        cacheado = cache.obter(hash_entrada)
+        if cacheado is not None:
+            resultado = dict(cacheado)
+            resultado["cache_hit"] = True
+            resultado["hash_entrada"] = hash_entrada
+            return resultado
+
+    resultado = _rodar_agente_sem_cache(cliente_id, flags, max_turnos, coletor)
+    resultado["cache_hit"] = False
+    resultado["hash_entrada"] = hash_entrada
+
+    if cache is not None:
+        cache.salvar(hash_entrada, resultado)
+
+    return resultado
+
+
+def _rodar_agente_sem_cache(cliente_id: str, flags: dict, max_turnos: int = 4,
+                            coletor: Coletor | None = None) -> dict:
     """Loop de function-calling: o modelo decide quais tools chamar até responder o
     parecer final em JSON. Retorna parecer + métricas (tokens, latência, tools usadas).
 

@@ -13,18 +13,21 @@ from pathlib import Path
 import pandas as pd
 
 from agente import rodar_agente
+from cache_parecer import CacheParecer
 from dados import aplicar_regras, carregar_e_limpar, ranking_clientes_sinalizados
 from observabilidade import Coletor
 
 OUTPUTS_DIR = Path(__file__).resolve().parent.parent / "outputs"
 
 
-def main():
+def main(usar_cache: bool = True):
     df, _ = carregar_e_limpar()
     df = aplicar_regras(df)
     top10 = ranking_clientes_sinalizados(df, top_n=10)
 
     coletor = Coletor()
+    cache = CacheParecer() if usar_cache else None
+    cache_hits = 0
     resultados = []
     for _, row in top10.iterrows():
         cliente_id = row["cliente_id"]
@@ -32,13 +35,22 @@ def main():
             "flag_fracionamento": bool(row["sinalizacoes_fracionamento"]),
             "flag_valor_atipico": bool(row["sinalizacoes_valor_atipico"] > 0),
         }
-        print(f"Processando {cliente_id}...")
-        resultado = rodar_agente(cliente_id, flags, coletor=coletor)
+        resultado = rodar_agente(cliente_id, flags, coletor=coletor, cache=cache)
+        if resultado["cache_hit"]:
+            cache_hits += 1
+            print(f"Processando {cliente_id}... (cache hit, sem chamada de API)")
+        else:
+            print(f"Processando {cliente_id}...")
         resultado["flags_deterministicas"] = flags
         resultado["volume_total_brl"] = round(float(row["volume_total_brl"]), 2)
         resultado["total_sinalizacoes_deterministicas"] = int(row["total_sinalizacoes"])
         resultados.append(resultado)
-        time.sleep(8)  # respeitar rate limit de tokens/minuto do free tier
+        if not resultado["cache_hit"]:
+            time.sleep(8)  # respeitar rate limit de tokens/minuto do free tier - so entre chamadas reais
+
+    if usar_cache:
+        print(f"\nCache: {cache_hits}/{len(resultados)} clientes reaproveitados "
+              f"({len(cache)} entradas no total)")
 
     OUTPUTS_DIR.mkdir(exist_ok=True)
     with open(OUTPUTS_DIR / "pareceres_lote.json", "w", encoding="utf-8") as f:
@@ -78,14 +90,17 @@ def main():
     print(f"Latencia por chamada - media: {resumo['latencia_media_por_chamada_s']}s | "
           f"p95: {resumo['latencia_p95_s']}s")
 
-    print("\nPor tipo de turno (onde o custo esta concentrado):")
-    print(chamadas.groupby("tipo_turno").agg(
-        chamadas=("turno", "count"),
-        tokens_entrada=("tokens_entrada", "sum"),
-        tokens_saida=("tokens_saida", "sum"),
-        custo_usd=("custo_usd", "sum"),
-        latencia_media_s=("latencia_s", "mean"),
-    ).round(6).to_string())
+    if chamadas.empty:
+        print("\n(nenhuma chamada de API nesta execucao - todos os clientes vieram do cache)")
+    else:
+        print("\nPor tipo de turno (onde o custo esta concentrado):")
+        print(chamadas.groupby("tipo_turno").agg(
+            chamadas=("turno", "count"),
+            tokens_entrada=("tokens_entrada", "sum"),
+            tokens_saida=("tokens_saida", "sum"),
+            custo_usd=("custo_usd", "sum"),
+            latencia_media_s=("latencia_s", "mean"),
+        ).round(6).to_string())
 
     print(f"\nProjecao 30 clientes:      US$ {resumo['projecao_30_clientes_usd']:.6f}")
     print(f"Projecao 10.000 clientes:  US$ {resumo['projecao_10k_clientes_usd']:.2f}")
