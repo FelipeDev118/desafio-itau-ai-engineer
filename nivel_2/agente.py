@@ -16,7 +16,7 @@ from groq import BadRequestError, Groq, RateLimitError
 from pydantic import BaseModel, ValidationError
 
 from cache_parecer import CacheParecer, calcular_hash
-from dados import aplicar_regras, carregar_e_limpar, ranking_clientes_sinalizados
+from dados import aplicar_regras, carregar_e_limpar, montar_flags, ranking_clientes_sinalizados
 from observabilidade import Coletor, calcular_custo_usd
 from tools import TOOLS_SPEC, historico_cliente
 
@@ -72,8 +72,10 @@ somas, medias e comparacao com limites ja foi feito fora deste prompt - nunca re
 
 Seu trabalho:
 1. Decida quais ferramentas voce precisa consultar para entender o caso. Nao chame uma
-   ferramenta se ela nao agregar informacao ao caso especifico - por exemplo, so consulte
-   operacoes_do_dia se houver uma data especifica relevante para investigar (ex: fracionamento).
+   ferramenta se ela nao agregar informacao ao caso especifico. Em particular: se as flags
+   deterministicas trouxerem "datas_fracionamento" (as datas exatas que dispararam a Regra 1
+   para este cliente), chame operacoes_do_dia para pelo menos uma dessas datas - e o motivo
+   de essa ferramenta existir. Nao invente uma data por conta propria; use as fornecidas.
    Voce pode chamar mais de uma ferramenta, em turnos separados, se precisar.
 2. Quando tiver informacao suficiente, responda SOMENTE com um JSON (sem texto antes/depois)
    no formato:
@@ -310,11 +312,10 @@ if __name__ == "__main__":
     top10 = ranking_clientes_sinalizados(df)
     print(top10[["cliente_id", "total_sinalizacoes", "volume_total_brl"]])
 
-    resultado = rodar_agente(
-        top10.iloc[0]["cliente_id"],
-        {
-            "flag_fracionamento": bool(top10.iloc[0]["sinalizacoes_fracionamento"]),
-            "flag_valor_atipico": bool(top10.iloc[0]["sinalizacoes_valor_atipico"] > 0),
-        },
-    )
+    # cliente com fracionamento, de proposito - e o caso que exercita datas_fracionamento
+    row = top10[top10["sinalizacoes_fracionamento"] > 0].iloc[0]
+    flags = montar_flags(df, row)
+    print(f"\nTestando {row['cliente_id']} com flags: {flags}")
+
+    resultado = rodar_agente(row["cliente_id"], flags)
     print(json.dumps(resultado, indent=2, ensure_ascii=False))

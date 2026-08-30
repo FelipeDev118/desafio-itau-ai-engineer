@@ -31,7 +31,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from agente import ParecerLLM, SYSTEM_PROMPT, _parsear_parecer
-from dados import aplicar_regras, carregar_e_limpar, ranking_clientes_sinalizados
+from dados import aplicar_regras, carregar_e_limpar, montar_flags, ranking_clientes_sinalizados
 
 load_dotenv(RAIZ / ".env")
 CLIENT = Groq(api_key=os.environ["GROQ_API_KEY"])
@@ -173,10 +173,7 @@ async def main(lote: bool):
 
             resultados = []
             for _, row in alvos.iterrows():
-                flags = {
-                    "flag_fracionamento": bool(row["sinalizacoes_fracionamento"]),
-                    "flag_valor_atipico": bool(row["sinalizacoes_valor_atipico"] > 0),
-                }
+                flags = montar_flags(df, row)
                 print(f"Processando {row['cliente_id']} via MCP...")
                 r = await rodar_agente_mcp(session, row["cliente_id"], flags)
                 resultados.append(r)

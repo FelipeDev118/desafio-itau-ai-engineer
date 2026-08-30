@@ -43,6 +43,18 @@ def flag_fracionamento(df: pd.DataFrame) -> pd.DataFrame:
     ]
 
 
+def datas_fracionamento(df: pd.DataFrame, cliente_id: str) -> list[str]:
+    """Quais datas dispararam a Regra 1 para este cliente, em YYYY-MM-DD.
+
+    Existe porque aplicar_regras() colapsa o resultado de flag_fracionamento() (que tem
+    cliente_id + data + soma + qtd) num booleano por cliente - suficiente para a coluna
+    flag_fracionamento do DataFrame, mas insuficiente para o agente investigar o dia
+    certo. Reusa flag_fracionamento() em vez de duplicar o calculo do candidato."""
+    candidatos = flag_fracionamento(df)
+    datas = candidatos.loc[candidatos["cliente_id"] == cliente_id, "data"]
+    return sorted(d.strftime("%Y-%m-%d") for d in datas)
+
+
 def flag_valor_atipico(df: pd.DataFrame) -> pd.DataFrame:
     contagem = df.groupby("cliente_id")["id"].transform("count")
     elegivel = df[contagem >= 4].copy()
@@ -66,6 +78,24 @@ def aplicar_regras(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["flag_valor_atipico"] = df["flag_valor_atipico"].fillna(False)
     return df
+
+
+def montar_flags(df: pd.DataFrame, row: pd.Series) -> dict:
+    """Monta o dict de flags deterministicas que vai para o prompt do agente, a partir
+    de uma linha de ranking_clientes_sinalizados().
+
+    Existe como funcao unica porque essa montagem estava duplicada em tres lugares
+    (nivel_2/lote.py, o teste standalone de nivel_2/agente.py e nivel_3/agente_mcp.py) -
+    e foi exatamente por causa dessa duplicacao, uma vez, que um lugar recebeu a data do
+    fracionamento e os outros nao. Um unico ponto de montagem evita reintroduzir isso."""
+    cliente_id = row["cliente_id"]
+    flags = {
+        "flag_fracionamento": bool(row["sinalizacoes_fracionamento"]),
+        "flag_valor_atipico": bool(row["sinalizacoes_valor_atipico"] > 0),
+    }
+    if flags["flag_fracionamento"]:
+        flags["datas_fracionamento"] = datas_fracionamento(df, cliente_id)
+    return flags
 
 
 def ranking_clientes_sinalizados(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:

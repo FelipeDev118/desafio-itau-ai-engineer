@@ -13,9 +13,9 @@ nivel_1:
 nivel_2:
   regras_em_escala: {status: completo, onde: "nivel_2/dados.py; top 10 salvo em outputs/top10_clientes_sinalizados.csv"}
   ferramentas:      {status: completo, onde: "nivel_2/tools.py (historico_cliente, operacoes_do_dia, perfil_canal)"}
-  agente:           {status: completo, onde: "nivel_2/agente.py — function calling nativo, o modelo escolhe quais tools chamar"}
+  agente:           {status: completo, onde: "nivel_2/agente.py — function calling nativo, o modelo escolhe quais tools chamar", nota: "defeito de prompt corrigido depois da entrega original: clientes com flag_fracionamento nao recebiam a data que disparou a regra e por isso nao chamavam operacoes_do_dia. Corrigido via dados.py:datas_fracionamento + dados.py:montar_flags. Validado: os 2 clientes com fracionamento no top 10 passaram a chamar a ferramenta na data certa (era 0)."}
   lote:             {status: completo, onde: "nivel_2/lote.py; resultados em outputs/pareceres_lote.json e outputs/metricas_lote.csv"}
-  confronto:        {status: completo, onde: "nivel_2/confronto.py; resultados em outputs/confronto_regra_vs_agente.csv e outputs/confronto_resumo.json"}
+  confronto:        {status: completo, onde: "nivel_2/confronto.py; resultados em outputs/confronto_regra_vs_agente.csv e outputs/confronto_resumo.json", nota: "metrica corrigida para separar respostas_validas de taxa_concordancia_entre_validas - a versao anterior misturava 'agente discordou' com 'agente nao respondeu' (turnos excedidos) sob a mesma taxa."}
 
 nivel_3:
   trilha_escolhida: B

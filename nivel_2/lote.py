@@ -14,7 +14,7 @@ import pandas as pd
 
 from agente import rodar_agente
 from cache_parecer import CacheParecer
-from dados import aplicar_regras, carregar_e_limpar, ranking_clientes_sinalizados
+from dados import aplicar_regras, carregar_e_limpar, montar_flags, ranking_clientes_sinalizados
 from observabilidade import Coletor
 
 OUTPUTS_DIR = Path(__file__).resolve().parent.parent / "outputs"
@@ -31,10 +31,7 @@ def main(usar_cache: bool = True):
     resultados = []
     for _, row in top10.iterrows():
         cliente_id = row["cliente_id"]
-        flags = {
-            "flag_fracionamento": bool(row["sinalizacoes_fracionamento"]),
-            "flag_valor_atipico": bool(row["sinalizacoes_valor_atipico"] > 0),
-        }
+        flags = montar_flags(df, row)
         resultado = rodar_agente(cliente_id, flags, coletor=coletor, cache=cache)
         if resultado["cache_hit"]:
             cache_hits += 1

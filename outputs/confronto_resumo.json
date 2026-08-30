@@ -1,6 +1,8 @@
 {
-  "taxa_concordancia": 0.4,
   "total_clientes": 10,
-  "concordantes": 4,
-  "divergentes": 6
+  "respostas_validas": 7,
+  "sem_parecer": 3,
+  "taxa_concordancia_entre_validas": 0.1429,
+  "concordantes": 1,
+  "divergentes_qualitativas": 6
 }

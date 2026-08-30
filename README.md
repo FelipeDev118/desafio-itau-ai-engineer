@@ -99,11 +99,14 @@ python nivel_3/comparar_transportes.py     # valida MCP vs. import direto
 - O modelo tenta, ocasionalmente, chamar uma **ferramenta fictícia chamada `JSON`** para devolver
   a resposta final, o que a API rejeita; o parecer válido vem dentro do corpo do erro e é
   recuperado de lá (`nivel_2/agente.py`).
-- O agente **decide** quais ferramentas usar (3 padrões distintos entre os 10 clientes), mas a
-  auditoria das saídas revelou um **defeito de desenho do meu prompt**: clientes com flag de
-  fracionamento não consultam o recorte diário, porque o prompt informa *que* a flag está ativa
-  sem informar *em qual data*. Analisado em
-  [`docs/DECISOES.md`](docs/DECISOES.md#nível-2--agente-e-ferramentas).
+- O agente **decide** quais ferramentas usar (3 padrões distintos entre os 10 clientes). A
+  auditoria das saídas revelou um **defeito de desenho do prompt**: clientes com flag de
+  fracionamento não consultavam o recorte diário, porque o prompt informava *que* a flag estava
+  ativa sem informar *em qual data*. **Corrigido** (`nivel_2/dados.py`, `datas_fracionamento` +
+  `montar_flags`): os clientes com fracionamento no top 10 passaram a chamar `operacoes_do_dia`
+  exatamente na data sinalizada pela Regra 1. Análise completa, incluindo um efeito colateral
+  descoberto na correção, em
+  [`docs/DECISOES.md`](docs/DECISOES.md#o-agente-não-usava-operacoes_do_dia-nos-casos-de-fracionamento--corrigido).
 - A **concordância entre regra e agente variou entre execuções** (50% numa rodada, 30% noutra,
   mesmo código e dados) — essa instabilidade em si é o achado mais importante: numa rodada, o
   parecer de `CLI-005` citou uma operação (R$ 409,16) que não é a sinalizada pela Regra 2; na
@@ -115,3 +118,8 @@ python nivel_3/comparar_transportes.py     # valida MCP vs. import direto
   reexecuções do pipeline*: parecer já gerado é reaproveitado em vez de recalculado. Provado, não
   só afirmado — rodar `lote.py` a 3ª vez levou 1,3s com **0 chamadas de API** (a 1ª levou 3min47),
   e `confronto.py` passou a dar o mesmo número em execuções seguidas.
+- A métrica de concordância também estava **enganosa por omissão**: misturava "o agente
+  discordou" com "o agente não respondeu" (turnos excedidos, comuns quando ele chuta uma data
+  sem grounding). `confronto.py` agora separa `respostas_validas` de
+  `taxa_concordancia_entre_validas` — a taxa de resposta válida virou um número auditável por si
+  só, não escondido dentro da concordância.

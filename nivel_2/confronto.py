@@ -74,31 +74,49 @@ def main():
         )
 
     confronto = pd.DataFrame(linhas)
-    taxa_concordancia = confronto["concorda"].mean()
+
+    # "sem parecer" (erro_parsing preenchido) e "parecer valido mas discordante" sao
+    # falhas de natureza diferente - taxa_concordancia misturando as duas mede menos
+    # do que parece. Separamos aqui para o numero nao mentir por omissao.
+    sem_parecer = confronto["erro_parsing"].notna()
+    avaliaveis = confronto[~sem_parecer]
+    taxa_concordancia = avaliaveis["concorda"].mean() if len(avaliaveis) else float("nan")
+    taxa_resposta_valida = (~sem_parecer).mean()
 
     print(confronto[["cliente_id", "flag_fracionamento", "qtd_operacoes_atipicas",
                       "nivel_risco_esperado_regra", "nivel_risco_agente", "concorda"]])
-    print(f"\nTaxa de concordancia: {taxa_concordancia:.0%} ({confronto['concorda'].sum()}/{len(confronto)})")
+    print(f"\nRespostas validas: {(~sem_parecer).sum()}/{len(confronto)} "
+          f"({taxa_resposta_valida:.0%})")
+    if len(avaliaveis):
+        print(f"Taxa de concordancia (entre as respostas validas): {taxa_concordancia:.0%} "
+              f"({int(avaliaveis['concorda'].sum())}/{len(avaliaveis)})")
 
-    divergentes = confronto[~confronto["concorda"]]
-    print(f"\n--- Divergencias ({len(divergentes)}) ---")
+    divergentes = avaliaveis[~avaliaveis["concorda"]]
+    print(f"\n--- Divergencias qualitativas ({len(divergentes)}) ---")
     for _, row in divergentes.iterrows():
         print(f"\n{row['cliente_id']}: regra esperava '{row['nivel_risco_esperado_regra']}', "
               f"agente deu '{row['nivel_risco_agente']}'")
-        if pd.notna(row["erro_parsing"]):
-            print(f"  sem parecer valido: {row['erro_parsing']}")
-        else:
-            print(f"  justificativa do agente: {row['justificativa']}")
+        print(f"  justificativa do agente: {row['justificativa']}")
+
+    falhas = confronto[sem_parecer]
+    if len(falhas):
+        print(f"\n--- Sem parecer valido ({len(falhas)}) ---")
+        for _, row in falhas.iterrows():
+            print(f"{row['cliente_id']}: {row['erro_parsing']}")
 
     OUTPUTS_DIR.mkdir(exist_ok=True)
     confronto.to_csv(OUTPUTS_DIR / "confronto_regra_vs_agente.csv", index=False)
     with open(OUTPUTS_DIR / "confronto_resumo.json", "w", encoding="utf-8") as f:
         json.dump(
             {
-                "taxa_concordancia": round(float(taxa_concordancia), 4),
                 "total_clientes": len(confronto),
-                "concordantes": int(confronto["concorda"].sum()),
-                "divergentes": int((~confronto["concorda"]).sum()),
+                "respostas_validas": int((~sem_parecer).sum()),
+                "sem_parecer": int(sem_parecer.sum()),
+                "taxa_concordancia_entre_validas": (
+                    round(float(taxa_concordancia), 4) if len(avaliaveis) else None
+                ),
+                "concordantes": int(avaliaveis["concorda"].sum()) if len(avaliaveis) else 0,
+                "divergentes_qualitativas": int((~avaliaveis["concorda"]).sum()) if len(avaliaveis) else 0,
             },
             f,
             indent=2,

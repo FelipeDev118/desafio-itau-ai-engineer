@@ -232,6 +232,39 @@ individual ao modelo continua não-determinística. A correção completa (persi
 registro histórico datado e imutável, nunca recalculável, mesmo limpando cache) é mais estrutural
 e não coube no tempo — ver seção 3.
 
+## O agente não usava `operacoes_do_dia` nos casos de fracionamento — corrigido
+
+Achado da auditoria original: 7 clientes *sem* `flag_fracionamento` chamavam
+`operacoes_do_dia`, e `CLI-029`, que *tem* a flag — o caso onde essa ferramenta serve de verdade
+— não chamava. A causa era um defeito de desenho meu: o prompt informava *que* a flag estava
+ativa, mas não *em qual data*, e sem data o agente não tinha o que passar para a ferramenta.
+
+**Correção** (`nivel_2/dados.py`, função `datas_fracionamento`): recuperar do próprio cálculo de
+`flag_fracionamento()` as datas que dispararam a regra para cada cliente — o dado já existia, só
+era descartado ao colapsar tudo num booleano. Uma função nova, `montar_flags()`, centraliza a
+montagem do dicionário de flags que vai para o prompt, porque essa montagem estava duplicada em
+três lugares (`lote.py`, o teste standalone de `agente.py`, e `nivel_3/agente_mcp.py`) — e foi
+justamente por causa dessa duplicação, uma vez, que um lugar recebeu a data e os outros não.
+Também dei bump em `VERSAO_PROMPT` no cache, porque o `SYSTEM_PROMPT` mudou de verdade e
+pareceres antigos (gerados com a instrução incompleta) não deveriam ser reaproveitados.
+
+**Prova**: reexecutei o lote. Dos 2 clientes com fracionamento que entraram no top 10 desta vez
+(`CLI-017`, `CLI-029`), os **2** chamaram `operacoes_do_dia` exatamente na data sinalizada pela
+Regra 1 — antes, 0 chamavam. O parecer de `CLI-029` passou a citar números concretos e
+verificáveis (4 operações em 26/05, entre R$ 14.326,29 e R$ 19.418,96) em vez de descrever o
+padrão em termos vagos.
+
+**Efeito colateral que a correção do confronto expôs**: com a métrica antiga (`taxa_concordancia`
+misturando "parecer discordante" e "parecer que nem existiu"), essa execução teria mostrado
+"10% de concordância" de forma enganosa — 3 dos 10 clientes ficaram sem parecer válido
+(`numero maximo de turnos excedido`), não porque discordaram da regra, mas porque o modelo
+esgotou os turnos disponíveis chamando `operacoes_do_dia` repetidamente com datas **inventadas**
+para clientes sem `flag_fracionamento` (que não recebem `datas_fracionamento` no prompt).
+Corrigi `nivel_2/confronto.py` para separar "respostas válidas" de "taxa de concordância entre
+as válidas" — a métrica de 10% escondia que 30% das chamadas simplesmente falharam por outro
+motivo. Esse comportamento secundário (o modelo chutar uma data quando não tem uma fornecida)
+fica registrado como limitação nova, não resolvida agora — ver seção 2.
+
 ## Pressupostos das regras que dados reais violam
 
 - **Regra 1 olha um único dia.** Fracionar em dois dias consecutivos escapa inteiramente. É a
@@ -265,8 +298,15 @@ estrutural não substitui sanitização de texto.
   `gpt-oss` via Groq; trocar de provedor exige revisitar essa parte.
 - **Só os 10 mais sinalizados passam pelo agente**, por causa do rate limit; os outros 20
   clientes não recebem parecer, e não há como saber se algum deveria ter sido pego.
-- **`max_turnos=4` pode não bastar.** `CLI-013` esgotou o limite sem responder — o tratamento de
-  malformado funcionou, mas o caso não chegou a parecer nenhum.
+- **`max_turnos=4` pode não bastar.** Mais de um cliente já esgotou o limite sem responder — o
+  tratamento de malformado funcionou, mas o caso não chegou a parecer nenhum.
+- **O agente inventa data quando não recebe uma.** Para clientes sem `flag_fracionamento` (que
+  não têm `datas_fracionamento` no prompt), o modelo às vezes chama `operacoes_do_dia` mesmo
+  assim, com uma data chutada sem grounding nos dados — comportamento que ajudou a esgotar
+  `max_turnos` em 3 dos 10 clientes numa execução. A correção simétrica à do fracionamento seria
+  a mesma ideia: ou o prompt deixa mais explícito que a ferramenta só deve ser usada quando há
+  uma data fornecida, ou o agente aprende (via few-shot) que "investigar sem pista de data" é
+  uma decisão válida por si só, não motivo para adivinhar.
 
 ---
 
@@ -315,21 +355,6 @@ faz, aceitável para 30 clientes, não para volume real de um banco).
 **Como validaria**: alterar um único valor da base de um cliente já cacheado, rodar de novo, e
 confirmar duas coisas — o hash muda (então o parecer antigo não é reaproveitado por engano) e o
 registro antigo continua consultável por quem precisar da decisão histórica.
-
-## Corrigir o prompt do agente para informar a data do fracionamento
-
-Auditando as saídas descobri que **o agente não usa `operacoes_do_dia` nos casos de
-fracionamento**, que é justamente onde ela serve: 7 clientes *sem* a flag chamaram a ferramenta e
-`CLI-029`, que *tem* a flag, não chamou. A causa é um defeito meu de desenho — o prompt informa
-*que* a flag está ativa, mas **não em qual data**, e sem data não há o que passar para a
-ferramenta.
-
-**Arquitetura**: trocar o booleano por `{"flag_fracionamento": true, "datas": ["2026-03-08"]}`. As
-datas já são calculadas em `flag_fracionamento()` (`dados.py`), só não são propagadas.
-
-**Como validaria**: reexecutar o lote e exigir que **todo** cliente com fracionamento chame
-`operacoes_do_dia` em pelo menos uma das datas sinalizadas — hoje isso é 0%. É verificável
-direto em `outputs/pareceres_lote.json`, sem julgamento subjetivo.
 
 ## Testes automatizados das regras
 

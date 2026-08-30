@@ -3,12 +3,11 @@
     "cliente_id": "CLI-014",
     "parecer": {
       "nivel_risco": "medio",
-      "tipologia_suspeita": "Transferência recebida via boleto com valor atípico",
+      "tipologia_suspeita": "Transferência recebida atípica",
       "red_flags": [
-        "Valor atípico em operação de transferência recebida",
-        "Uso de boleto para recebimento de valor elevado"
+        "Valor atípico em relação ao histórico de transações"
       ],
-      "justificativa": "O cliente apresenta 11 operações com volume total de R$80.629,99 e valor médio de R$7.330, indicando a presença de algumas transações de alto valor. A operação de 26/05/2026, de R$9.157,80 via boleto, está acima do valor mediano (R$2.308,41) e foi marcada como atípica. Não há indícios de fracionamento, concentração excessiva em contrapartes ou padrão de estruturação, e a distribuição de tipos de operação é diversificada. Diante disso, o risco é considerado médio."
+      "justificativa": "O cliente apresenta um volume de transações moderado (11 operações, total de R$80.629,99) com valor médio de R$7.330, mas a mediana é de R$2.308,41, indicando que a maioria das operações são de menor valor. A operação de R$9.157,80 em 2026-05-26, recebida via boleto de Pampa Trading SA, está significativamente acima da mediana, acionando a flag de valor atípico. Não há indícios de fracionamento ou outras anomalias, e a contrapartida é recorrente no histórico, sugerindo possível atividade comercial legítima, porém o desvio de valor justifica monitoramento adicional."
     },
     "erro_parsing": null,
     "texto_bruto": null,
@@ -27,10 +26,10 @@
         }
       }
     ],
-    "tokens_total": 1464,
-    "latencia_s": 2.9,
-    "cache_hit": true,
-    "hash_entrada": "0885d9dbf572d19c",
+    "tokens_total": 3252,
+    "latencia_s": 3.33,
+    "cache_hit": false,
+    "hash_entrada": "d3101af725c65eb9",
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
@@ -40,19 +39,8 @@
   },
   {
     "cliente_id": "CLI-023",
-    "parecer": {
-      "nivel_risco": "medio",
-      "tipologia_suspeita": "Operação em espécie de alto valor",
-      "red_flags": [
-        "Flag de valor atípico ativada",
-        "Operação em espécie (R$41.768,17) incomum para o perfil",
-        "Distribuição de canais mostra predominância de TED, mas presença de espécie",
-        "Contrapartes variadas, sem concentração"
-      ],
-      "justificativa": "O cliente realizou 12 operações totalizando R$148.5k, com média alta (R$12.3k) mas mediana baixa (R$3.2k), indicando disparidade nos valores. Uma única operação em espécie de R$41.768,17, fora do padrão de uso predominante de TED, foi identificada, ativando a flag de valor atípico. Embora não haja fracionamento, o uso de dinheiro em espécie de valor elevado e a diversidade de contrapartes sugerem risco de introdução de recursos ilícitos, justificando a classificação de risco médio e a necessidade de monitoramento adicional."
-    },
-    "erro_parsing": null,
-    "texto_bruto": null,
+    "parecer": null,
+    "erro_parsing": "numero maximo de turnos de tool-calling excedido",
     "tools_chamadas": [
       {
         "tool": "historico_cliente",
@@ -68,16 +56,24 @@
         }
       },
       {
-        "tool": "perfil_canal",
+        "tool": "operacoes_do_dia",
         "args": {
-          "cliente_id": "CLI-023"
+          "cliente_id": "CLI-023",
+          "data": "2026-04-15"
+        }
+      },
+      {
+        "tool": "operacoes_do_dia",
+        "args": {
+          "cliente_id": "CLI-023",
+          "data": "2026-05-18"
         }
       }
     ],
-    "tokens_total": 4361,
-    "latencia_s": 8.03,
-    "cache_hit": true,
-    "hash_entrada": "f0850ffd92e992f8",
+    "tokens_total": 4288,
+    "latencia_s": 26.29,
+    "cache_hit": false,
+    "hash_entrada": "0243950095830862",
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
@@ -88,14 +84,13 @@
   {
     "cliente_id": "CLI-028",
     "parecer": {
-      "nivel_risco": "alto",
-      "tipologia_suspeita": "Valor atípico em transferência enviada",
+      "nivel_risco": "medio",
+      "tipologia_suspeita": "Transacao de valor atipico",
       "red_flags": [
-        "Valor atípico detectado (valor médio 7.395,9 BRL, operação de 6.913,84 BRL em canal de cartão)",
-        "Concentração de volume significativo em canal TED (61.7% do total) sem justificativa clara",
-        "Baixa diversidade de contrapartes (apenas 3 contrapartes distintas em 12 operações)"
+        "flag_valor_atipico",
+        "operacao de alto valor via cartao"
       ],
-      "justificativa": "O cliente apresenta um valor atípico em transferência enviada, confirmado pela flag determinística. Embora não haja fracionamento, a operação de quase 7 mil BRL em canal cartão, combinada com alta concentração de volume em TED e pouca variedade de contrapartes, indica risco elevado de lavagem de dados financeiros."
+      "justificativa": "O cliente apresenta 12 operacoes com volume total de R$ 88.750,8 e valor medio de R$ 7.395,9. Uma das operacoes (R$ 6.913,84) realizada via cartao em 2026-05-23 se destaca por ser significativamente maior que a mediana (R$ 4.430,25) e por utilizar canal de cartao para transferencia enviada, o que difere do padrao historico do cliente. Embora nao haja indicios de fracionamento, o flag de valor atipico indica desvio do comportamento usual, justificando um nivel de risco medio."
     },
     "erro_parsing": null,
     "texto_bruto": null,
@@ -114,16 +109,17 @@
         }
       },
       {
-        "tool": "perfil_canal",
+        "tool": "operacoes_do_dia",
         "args": {
-          "cliente_id": "CLI-028"
+          "cliente_id": "CLI-028",
+          "data": "2026-03-03"
         }
       }
     ],
-    "tokens_total": 3638,
-    "latencia_s": 22.18,
-    "cache_hit": true,
-    "hash_entrada": "904ce3477f09d9f1",
+    "tokens_total": 2709,
+    "latencia_s": 23.09,
+    "cache_hit": false,
+    "hash_entrada": "9c85d3cda990ad88",
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
@@ -134,15 +130,12 @@
   {
     "cliente_id": "CLI-013",
     "parecer": {
-      "nivel_risco": "alto",
-      "tipologia_suspeita": "Transferência atípica de valor elevado via TED",
+      "nivel_risco": "medio",
+      "tipologia_suspeita": "Transação atípica de valor baixo",
       "red_flags": [
-        "Valor atípico detectado nas regras determinísticas",
-        "Concentração de volume elevado (55.5k BRL) em transferências TED",
-        "Uso predominante de canal PIX, mas operação suspeita ocorreu via TED",
-        "Operação única de 312,54 BRL não parece atípica isolada, porém inserida em contexto de alto volume TED"
+        "valor_atipico"
       ],
-      "justificativa": "O cliente apresenta um volume total de 81.7k BRL em 10 operações, com 55.5k BRL concentrados em transferências TED, indicando potencial uso de canal para movimentação de fundos. A flag de valor atípico já foi disparada, sugerindo que algum valor (possivelmente o valor médio ou mediano) está fora do padrão esperado. Embora a operação de 312,54 BRL em 16/05 seja pequena, ela ocorre dentro de um padrão de uso intenso de TED, que não condiz com o perfil predominante (PIX). Essa incongruência entre o canal predominante e a alta concentração de TED, associada à flag de valor atípico, eleva o risco para alto."
+      "justificativa": "O cliente apresenta um volume médio alto (R$8.173,10) e a maioria das operações são de valores superiores a R$3.000, porém foi identificada uma operação de R$312,54, considerada atípica em relação ao padrão histórico. Não há indícios de fracionamento ou de múltiplas transações pequenas, mas a presença de um valor fora do padrão justifica atenção moderada."
     },
     "erro_parsing": null,
     "texto_bruto": null,
@@ -159,18 +152,12 @@
           "cliente_id": "CLI-013",
           "data": "2026-05-16"
         }
-      },
-      {
-        "tool": "perfil_canal",
-        "args": {
-          "cliente_id": "CLI-013"
-        }
       }
     ],
-    "tokens_total": 3744,
-    "latencia_s": 14.91,
-    "cache_hit": true,
-    "hash_entrada": "6261212609b8b375",
+    "tokens_total": 1644,
+    "latencia_s": 10.85,
+    "cache_hit": false,
+    "hash_entrada": "4fc8b0e6f62b56f8",
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
@@ -180,19 +167,8 @@
   },
   {
     "cliente_id": "CLI-005",
-    "parecer": {
-      "nivel_risco": "medio",
-      "tipologia_suspeita": "Transações de valor atípico em múltiplos canais",
-      "red_flags": [
-        "Flag de valor atípico ativada",
-        "Concentração de volume elevado em cartão com poucas operações",
-        "Uso de canais de espécie (dinheiro) e boleto",
-        "Contrapartes comerciais recorrentes que podem indicar operações de comércio internacional"
-      ],
-      "justificativa": "O cliente apresenta 11 operações com volume total de R$64.7 mil, porém o valor médio (R$5.9 mil) está acima da mediana (R$2.1 mil), indicando presença de transações de valor elevado. A flag de valor atípico confirma essa anomalia. O perfil de canal mostra uso diversificado, com predominância de pix, mas volume significativo em cartão (R$31.1 mil) em apenas duas operações, sugerindo possíveis movimentações de alto valor em canais menos monitorados. A presença de contrapartes comerciais recorrentes e a utilização de espécie e boleto adicionam complexidade ao padrão de uso. Embora não haja indício de fracionamento, a combinação de valor atípico, concentração de volume em poucos canais e a variedade de canais utilizados justifica a classificação de risco médio e recomenda monitoramento adicional."
-    },
-    "erro_parsing": null,
-    "texto_bruto": null,
+    "parecer": null,
+    "erro_parsing": "numero maximo de turnos de tool-calling excedido",
     "tools_chamadas": [
       {
         "tool": "historico_cliente",
@@ -208,16 +184,24 @@
         }
       },
       {
-        "tool": "perfil_canal",
+        "tool": "operacoes_do_dia",
         "args": {
-          "cliente_id": "CLI-005"
+          "cliente_id": "CLI-005",
+          "data": "2026-04-20"
+        }
+      },
+      {
+        "tool": "operacoes_do_dia",
+        "args": {
+          "cliente_id": "CLI-005",
+          "data": "2026-05-01"
         }
       }
     ],
-    "tokens_total": 4537,
-    "latencia_s": 19.76,
-    "cache_hit": true,
-    "hash_entrada": "cbd1d7d1234f2c0e",
+    "tokens_total": 3940,
+    "latencia_s": 20.12,
+    "cache_hit": false,
+    "hash_entrada": "6d1d4e99f3d5224a",
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
@@ -229,14 +213,13 @@
     "cliente_id": "CLI-026",
     "parecer": {
       "nivel_risco": "alto",
-      "tipologia_suspeita": "Pagamento via PIX de alto valor seguido de saque em dinheiro",
+      "tipologia_suspeita": "Pagamento de alto valor via PIX para contraparte não usual",
       "red_flags": [
-        "Valor atípico detectado (operação de R$21.261,01 via PIX)",
-        "Concentração de volume no canal PIX (≈43% do volume total em apenas 2 operações)",
-        "Sequência de pagamento de alto valor e saque em dinheiro no mesmo dia",
-        "Contraparte empresarial (Solar Industria LTDA) sem histórico frequente"
+        "valor_atipico",
+        "transacao_pix_alta",
+        "contraparte_nova"
       ],
-      "justificativa": "O cliente apresenta um volume total de R$54.7 mil em 12 operações, porém uma única operação de R$21.261,01 via PIX representa quase 39% do volume total e supera em mais de quatro vezes o valor médio. Essa operação atípica, combinada com um saque em dinheiro no mesmo dia, indica possível tentativa de movimentação e camuflagem de recursos, caracterizando risco alto de lavagem de dinheiro."
+      "justificativa": "Operação de 21.261,01 BRL via PIX, muito acima da média (4,6x) e da mediana, sem histórico de relacionamento com a contraparte, indicando possível tentativa de lavagem de dinheiro."
     },
     "erro_parsing": null,
     "texto_bruto": null,
@@ -253,18 +236,12 @@
           "cliente_id": "CLI-026",
           "data": "2026-05-17"
         }
-      },
-      {
-        "tool": "perfil_canal",
-        "args": {
-          "cliente_id": "CLI-026"
-        }
       }
     ],
-    "tokens_total": 3948,
-    "latencia_s": 25.74,
-    "cache_hit": true,
-    "hash_entrada": "12a14cc2f10c9d87",
+    "tokens_total": 2975,
+    "latencia_s": 9.77,
+    "cache_hit": false,
+    "hash_entrada": "bb1d61d87131276d",
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
@@ -276,14 +253,13 @@
     "cliente_id": "CLI-001",
     "parecer": {
       "nivel_risco": "medio",
-      "tipologia_suspeita": "Deposito em especie de alto valor sem justificativa",
+      "tipologia_suspeita": "Transferencia de alto valor para contraparte pouco frequente",
       "red_flags": [
-        "Operacao em especie de R$ 25.110,15 representando mais de 50% do volume total",
-        "Valor medio elevado (R$ 4.794,78) com mediana muito baixa (R$ 1.609,15) indicando disparidade",
-        "Concentracao de operacoes no canal TED e transferencia de R$ 5.016,62 para empresa de importacao",
-        "Flag de valor atipico ativada"
+        "valor atípico em relação ao valor mediano",
+        "operacao única de alto valor (5016.62 BRL)",
+        "contraparte (Orion Importacao LTDA) com baixa frequência"
       ],
-      "justificativa": "O cliente apresenta um volume significativo em operacoes de especie, que representa mais da metade do total movimentado, contraste com a media e mediana, indicando comportamento atipico. A ausencia de fracionamento nao elimina o risco, pois o alto valor em especie pode ser indicativo de lavagem de dinheiro via uso de dinheiro fisico. A transferencia para empresa de importacao tambem pode caracterizar trade-based laundering. Diante desses indícios, recomenda-se classificacao de risco medio e aprofundamento da investigacao."
+      "justificativa": "A flag de valor atípico indica que a operacao de 5016.62 BRL está significativamente acima do valor mediano (1609.15 BRL) e acima da media historica, embora nao seja extremamente alta. A operacao ocorreu uma unica vez e a contraparte aparece apenas uma vez nos registros, sugerindo possivel uso de canal para movimentacao pontual de recursos. Ausencia de fracionamento reduz a gravidade, mas a combinacao de valor atipico e contrapartida incomum justifica classificacao de risco medio."
     },
     "erro_parsing": null,
     "texto_bruto": null,
@@ -300,18 +276,12 @@
           "cliente_id": "CLI-001",
           "data": "2026-05-26"
         }
-      },
-      {
-        "tool": "perfil_canal",
-        "args": {
-          "cliente_id": "CLI-001"
-        }
       }
     ],
-    "tokens_total": 2360,
-    "latencia_s": 18.26,
-    "cache_hit": true,
-    "hash_entrada": "d54848665d76fd3d",
+    "tokens_total": 1631,
+    "latencia_s": 11.93,
+    "cache_hit": false,
+    "hash_entrada": "a95f0c74714f48ed",
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
@@ -323,22 +293,22 @@
     "cliente_id": "CLI-029",
     "parecer": {
       "nivel_risco": "medio",
-      "tipologia_suspeita": "Fracionamento de operações (structuring)",
+      "tipologia_suspeita": "Estruturação (smurfing) de transações",
       "red_flags": [
-        "Flag de fracionamento ativada",
-        "Múltiplas transferências TED de valores abaixo do limite de reporte",
-        "Uso de canais diversificados (boleto, espécie, PIX) para movimentar recursos",
-        "Presença de contrapartes comerciais (importação/exportação) sem justificativa clara"
+        "Fracionamento de operações em um mesmo dia",
+        "Múltiplas transações de alto valor em canais diferentes (TED e PIX)",
+        "Contrapartes distintas sem justificativa aparente"
       ],
-      "justificativa": "O cliente realizou 16 operações no período analisado, totalizando R$191.385,77, com média de R$11.961,61 por operação. Apesar do volume total elevado, a maioria das transferências (TED) foram fracionadas em valores abaixo do limite de reporte, configurando a flag de fracionamento. A diversificação de canais (TED, boleto, espécie, PIX) e a presença de contrapartes comerciais recorrentes sugerem tentativa de disfarçar a origem e destino dos recursos, caracterizando risco médio de lavagem de dinheiro."
+      "justificativa": "O cliente apresentou flag de fracionamento com 4 operações em 2026-05-26, totalizando R$71.297,68, distribuídas entre TED e PIX e envolvendo diferentes contrapartes. Embora nenhum valor individual seja atípico, o padrão de dividir valores elevados em múltiplas transações no mesmo dia indica possível tentativa de evitar reporte, configurando risco médio."
     },
     "erro_parsing": null,
     "texto_bruto": null,
     "tools_chamadas": [
       {
-        "tool": "historico_cliente",
+        "tool": "operacoes_do_dia",
         "args": {
-          "cliente_id": "CLI-029"
+          "cliente_id": "CLI-029",
+          "data": "2026-05-26"
         }
       },
       {
@@ -348,13 +318,16 @@
         }
       }
     ],
-    "tokens_total": 2926,
-    "latencia_s": 16.45,
-    "cache_hit": true,
-    "hash_entrada": "73b6df1a0151f592",
+    "tokens_total": 1737,
+    "latencia_s": 11.38,
+    "cache_hit": false,
+    "hash_entrada": "2a9ee2bcb8d03052",
     "flags_deterministicas": {
       "flag_fracionamento": true,
-      "flag_valor_atipico": false
+      "flag_valor_atipico": false,
+      "datas_fracionamento": [
+        "2026-05-26"
+      ]
     },
     "volume_total_brl": 191385.77,
     "total_sinalizacoes_deterministicas": 1
@@ -363,59 +336,44 @@
     "cliente_id": "CLI-017",
     "parecer": {
       "nivel_risco": "medio",
-      "tipologia_suspeita": "Fracionamento de valores via PIX",
+      "tipologia_suspeita": "Fracionamento de valores em múltiplas operações",
       "red_flags": [
-        "Flag de fracionamento ativada",
-        "Predominância de transações PIX (49% do volume em 6 operações)",
-        "Múltiplas operações com valores próximos ao limite de reporte (~R$9k)",
-        "Baixa diversidade de contrapartes (principalmente Lumen Industria ME)",
-        "Ausência de valores atípicos que justifiquem o volume total"
+        "flag_fracionamento",
+        "várias operações de alto valor no mesmo dia",
+        "uso de múltiplos canais (TED e PIX) em sequência",
+        "contrapartes diferentes, possivelmente relacionadas"
       ],
-      "justificativa": "O cliente realizou 13 operações em um período de pouco mais de dois meses, com volume total de R$121.391,37 e valor médio de R$9.337,80. Embora não haja valores atípicos, a presença da flag de fracionamento e a concentração de quase metade do volume em transações PIX sugere tentativa de estruturar pagamentos para evitar detecção. A limitada variedade de contrapartes reforça a suspeita de movimentação interna ou de fachada. Diante desses indícios, o risco é classificado como médio."
+      "justificativa": "O cliente realizou quatro operações no dia 2026-03-08 totalizando R$ 64.673,88, distribuídas entre TED e PIX, incluindo saques, depósitos e transferências. A presença da flag de fracionamento indica tentativa de dividir valores em múltiplas transações para evitar detecção. Embora não haja flag de valor atípico, o padrão de múltiplas transações de alto valor em um único dia, usando diferentes canais e contrapartes, eleva o risco para médio."
     },
     "erro_parsing": null,
     "texto_bruto": null,
     "tools_chamadas": [
       {
-        "tool": "historico_cliente",
+        "tool": "operacoes_do_dia",
         "args": {
-          "cliente_id": "CLI-017"
-        }
-      },
-      {
-        "tool": "perfil_canal",
-        "args": {
-          "cliente_id": "CLI-017"
+          "cliente_id": "CLI-017",
+          "data": "2026-03-08"
         }
       }
     ],
-    "tokens_total": 2911,
-    "latencia_s": 2.75,
-    "cache_hit": true,
-    "hash_entrada": "06baa772966a9b62",
+    "tokens_total": 2042,
+    "latencia_s": 6.16,
+    "cache_hit": false,
+    "hash_entrada": "31a5586c026946e8",
     "flags_deterministicas": {
       "flag_fracionamento": true,
-      "flag_valor_atipico": false
+      "flag_valor_atipico": false,
+      "datas_fracionamento": [
+        "2026-03-08"
+      ]
     },
     "volume_total_brl": 121391.37,
     "total_sinalizacoes_deterministicas": 1
   },
   {
     "cliente_id": "CLI-030",
-    "parecer": {
-      "nivel_risco": "medio",
-      "tipologia_suspeita": "Recebimento atípico via boleto e saque via pix para pessoa jurídica",
-      "red_flags": [
-        "Flag de valor atípico ativada",
-        "Desvio entre valor médio (13.086,77) e mediano (4.611,07) indicando operações pontuais de alto valor",
-        "Recebimento via boleto de empresa (Alfa Assessoria LTDA) sem histórico de relacionamento",
-        "Saque via pix para empresa (Quartzo Distribuidora LTDA) em valor relevante",
-        "Baixa frequência de operações (9 em ~2 meses) com volume total elevado"
-      ],
-      "justificativa": "O cliente apresenta um volume total elevado em poucas operações, com um valor médio muito superior ao mediano, indicando a presença de transações pontuais de alto valor. A flag de valor atípico já foi disparada. As operações recentes incluem recebimento via boleto de uma empresa não recorrente e um saque via pix para outra empresa, sem um padrão claro de negócios. Não há indícios de fracionamento, mas a combinação de valores atípicos, canais diferentes e contrapartes corporativas justifica a classificação de risco médio e a necessidade de monitoramento adicional."
-    },
-    "erro_parsing": null,
-    "texto_bruto": null,
+    "parecer": null,
+    "erro_parsing": "numero maximo de turnos de tool-calling excedido",
     "tools_chamadas": [
       {
         "tool": "historico_cliente",
@@ -429,12 +387,26 @@
           "cliente_id": "CLI-030",
           "data": "2026-05-19"
         }
+      },
+      {
+        "tool": "operacoes_do_dia",
+        "args": {
+          "cliente_id": "CLI-030",
+          "data": "2026-04-15"
+        }
+      },
+      {
+        "tool": "operacoes_do_dia",
+        "args": {
+          "cliente_id": "CLI-030",
+          "data": "2026-05-10"
+        }
       }
     ],
-    "tokens_total": 3074,
-    "latencia_s": 14.14,
-    "cache_hit": true,
-    "hash_entrada": "a444011c7c3e00c3",
+    "tokens_total": 3952,
+    "latencia_s": 18.25,
+    "cache_hit": false,
+    "hash_entrada": "adbf184447458a31",
     "flags_deterministicas": {
       "flag_fracionamento": false,
       "flag_valor_atipico": true
