@@ -58,20 +58,31 @@ python nivel_3/comparar_transportes.py     # valida MCP vs. import direto
 
 ## Estrutura
 
+A estrutura obrigatória do enunciado foi seguida à risca. Os arquivos marcados com ➕ são
+**adições** a ela — módulos extraídos para não inchar os arquivos exigidos, e os bônus (Docker,
+observabilidade de custo). Nenhum arquivo obrigatório foi renomeado, movido ou substituído.
+
 | Caminho | O que é |
 |---|---|
 | `nivel_1/nivel_1.ipynb` | Tratamento de dados, regras determinísticas, validação e parecer via LLM (com as saídas executadas). |
-| `nivel_2/dados.py` | Carga, limpeza e regras reaproveitadas do Nível 1 sobre a base maior. |
 | `nivel_2/tools.py` | As três ferramentas que o agente pode consultar. |
 | `nivel_2/agente.py` | Agente com function calling nativo — o modelo decide quais tools chamar. |
-| `nivel_2/lote.py` | Execução em lote sobre os 10 clientes mais sinalizados + métricas. |
 | `nivel_2/confronto.py` | Confronto entre `nivel_risco` do agente e as flags determinísticas. |
+| ➕ `nivel_2/dados.py` | Carga, limpeza e regras reaproveitadas do Nível 1 sobre a base maior. |
+| ➕ `nivel_2/lote.py` | Execução em lote sobre os 10 clientes mais sinalizados. |
+| ➕ `nivel_2/observabilidade.py` | Custo e latência por chamada de API (bônus). |
+| ➕ `nivel_2/cache_parecer.py` | Cache por hash da entrada — reprodutibilidade entre execuções. |
+| ➕ `nivel_2/verificacao_aderencia.py` | Confere se o parecer cita números que existem na base. |
 | `nivel_3/mcp_server.py` | Servidor MCP (stdio) que republica as ferramentas do Nível 2. |
 | `nivel_3/agente_mcp.py` | Agente que consome as ferramentas por MCP, não por import direto. |
 | `nivel_3/comparar_transportes.py` | Valida que a troca de transporte preserva o comportamento. |
 | `outputs/` | Resultados salvos de todas as execuções. |
 | `docs/DECISOES.md` | Trade-offs, limitações e o que faria com mais tempo. |
 | `docs/USO_DE_IA.md` | Como usei IA e onde ela me levou ao caminho errado. |
+| ➕ `docs/ARQUITETURA.md` | Arquitetura do Nível 3 (MCP) e como conectar. |
+| ➕ `docs/REPRODUTIBILIDADE.md` | O que é reproduzível nesta solução, e o que não é. |
+| ➕ `Dockerfile`, `docker-compose.yml` | Ambiente containerizado (bônus). |
+| ➕ `verificar_ambiente.py` | Smoke test: reexecuta a camada determinística e compara com a entrega. |
 
 ## O que foi concluído
 
@@ -81,8 +92,8 @@ python nivel_3/comparar_transportes.py     # valida MCP vs. import direto
   duas versões de prompt comparadas com métricas de tokens e latência.
 - **Nível 2 — completo.** Regras reaproveitadas em escala sem reescrita, três ferramentas,
   agente com function calling nativo (usa 3 padrões distintos de ferramentas entre os 10
-  clientes — só 6 dos 10 receberam as três), lote sobre os 10 clientes com registro de
-  custo/latência, e confronto regra vs. modelo com análise das divergências.
+  clientes — não chama todas sempre), lote sobre os 10 clientes com registro de custo/latência
+  por chamada, e confronto regra vs. modelo com análise das divergências.
 - **Nível 3 — completo (Trilha B).** As ferramentas do Nível 2 são expostas por um servidor MCP
   local via stdio e consumidas pelo protocolo, com descoberta em runtime — o agente não tem mais
   a lista de ferramentas hardcoded. Validado comparando as duas vias: payload das ferramentas
@@ -107,13 +118,13 @@ python nivel_3/comparar_transportes.py     # valida MCP vs. import direto
   exatamente na data sinalizada pela Regra 1. Análise completa, incluindo um efeito colateral
   descoberto na correção, em
   [`docs/DECISOES.md`](docs/DECISOES.md#o-agente-não-usava-operacoes_do_dia-nos-casos-de-fracionamento--corrigido).
-- A **concordância entre regra e agente variou entre execuções** (50% numa rodada, 30% noutra,
-  mesmo código e dados) — essa instabilidade em si é o achado mais importante: numa rodada, o
-  parecer de `CLI-005` citou uma operação (R$ 409,16) que não é a sinalizada pela Regra 2; na
-  outra, citou as corretas. Na maioria das divergências qualitativas, o agente reconhece o mesmo
-  padrão que disparou a regra e classifica abaixo assim mesmo — um limiar mais conservador para
-  "alto", não um erro de fato. Análise em
-  [`docs/DECISOES.md`](docs/DECISOES.md#nível-2--confronto-regra-vs-modelo).
+- A **concordância entre regra e agente variou entre execuções** (50%, depois 30%, com o mesmo
+  código e os mesmos dados) — essa instabilidade em si é um achado central. Na execução
+  commitada, as **6 divergências apontam todas na mesma direção** (regra `alto` → agente
+  `médio`): diferença sistemática de limiar, não ruído. Mas a verificação de aderência qualifica
+  essa leitura — em 3 dos 7 pareceres o raciocínio partiu da operação errada, então não dá para
+  chamar a divergência de "julgamento melhor". Análise em
+  [`docs/DECISOES.md`](docs/DECISOES.md#critério-do-confronto-intensidade-não-coincidência-de-regras).
 - **Cache por hash de entrada** (`nivel_2/cache_parecer.py`) resolve essa instabilidade *entre
   reexecuções do pipeline*: parecer já gerado é reaproveitado em vez de recalculado. Provado, não
   só afirmado — rodar `lote.py` a 3ª vez levou 1,3s com **0 chamadas de API** (a 1ª levou 3min47),

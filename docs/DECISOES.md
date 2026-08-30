@@ -114,51 +114,58 @@ Critério final:
 | exatamente 1 operação atípica, sem fracionamento | `médio` |
 
 Fracionamento vai direto para "alto" porque é padrão **intencional** (structuring), não outlier
-estatístico. Resultado, na última execução: **30% de concordância (3/10)**, 7 divergências.
+estatístico.
 
-### O que a auditoria dos textos mostrou, e o que ela não mostrou
+### A métrica precisou ser desmembrada para não mentir
 
-A tentação é ler "30% de concordância" como "o agente discorda muito da regra, e às vezes está
-certo". Conferindo justificativa por justificativa contra os dados reais, a história é mais
-específica: em **6 dos 7** divergentes, o agente **identifica corretamente** o mesmo padrão que
-disparou a regra e ainda assim classifica abaixo.
+A primeira versão reportava uma `taxa_concordancia` única. Ela **misturava duas falhas de
+natureza diferente**: "o agente discordou da regra" e "o agente não produziu parecer nenhum"
+(esgotou `max_turnos`). Um número só, somando as duas, mede menos do que aparenta — uma queda na
+taxa pode significar tanto divergência de critério quanto instabilidade técnica, e são problemas
+com soluções opostas. `confronto.py` hoje reporta os dois separados:
 
-- **`CLI-029`** (regra: alto · agente: médio): descreve com precisão verificável — conferi contra
-  a base — "4 operações de alto valor (entre R$ 14.326,29 e R$ 19.418,96)... todas via TED ou
-  PIX" no dia 26/05/2026, e nomeia o padrão: *"o padrão de fracionamento está presente"*. Mesmo
-  assim, médio.
-- **`CLI-017`** (regra: alto · agente: médio): reconhece explicitamente *"a flag de fracionamento
-  já está ativada"*. Mesmo assim, médio.
-- **`CLI-005`**, **`CLI-001`**, **`CLI-028`** (regra: alto · agente: médio): nos três, a operação
-  e o canal citados batem com os dados — no caso de `CLI-005`, "espécie (R$ 15,0 mil em 2
-  operações)" e "cartão (R$ 31,1 mil em 2 operações)" conferem exatamente com o recálculo
-  (R$ 15.013,22 e R$ 31.153,13). Mesmo assim, médio.
+| Métrica | Execução atual |
+|---|---|
+| Respostas válidas | **7/10** (3 esgotaram `max_turnos`) |
+| Concordância entre as válidas | **14%** (1/7) |
+| Divergências qualitativas | 6 |
 
-**O padrão real não é o agente errando o fato — é o agente tendo um limiar mais alto para "alto"
-do que o meu critério.** Ele parece reservar "alto" para quando múltiplos fatores se reforçam
-(fracionamento *e* canal atípico, por exemplo), enquanto meu critério dispara com um único sinal.
-Nenhum dos dois é "a verdade"; são dois desenhos de threshold diferentes, e a divergência
-sistemática — não aleatória — é o dado interessante.
+### A divergência é sistemática, não aleatória — e essa é a informação
 
-- Na direção oposta, **`CLI-030`** (regra: médio · agente: alto) segue sendo escalada
-  **defensável**: R$ 85.546,51 de R$ 117.780,89 concentrados em duas TEDs, concentração que a
-  Regra 2, comparando operação a operação contra a mediana, não enxerga isolada.
-- **`CLI-013`** não produziu parecer — esgotou os 4 turnos de function-calling sem responder em
-  texto. É o tratamento de malformado funcionando como desenhado (`parecer: None` +
-  `erro_parsing` explícito, em vez de o processo quebrar), mas expõe um limite real: um caso que
-  exige mais idas e vindas pode nunca fechar dentro de `max_turnos`.
+Os **6 divergentes vão todos na mesma direção**: a regra diz `alto`, o agente diz `médio`. Zero
+casos na direção oposta. Isso não é ruído, é **diferença de limiar**: meu critério dispara "alto"
+com um único sinal (fracionamento *ou* 2+ atípicas), enquanto o agente parece reservar "alto"
+para quando múltiplos fatores se reforçam. Nenhum dos dois é "a verdade" — são dois desenhos de
+threshold, e o fato de a discordância ser unidirecional é o dado interessante. Se fosse
+aleatória, apontaria para modelo instável; sendo sistemática, aponta para calibração.
 
-**Nota de não-determinismo, que é o achado mais importante desta seção.** A execução anterior
-deste confronto (preservada em commit anterior) tinha dado **50% de concordância**, e o parecer
-de `CLI-005` **citava uma operação errada** (R$ 409,16, valor abaixo da mediana do cliente — não
-é a operação atípica). Nesta execução, com o **mesmo código e os mesmos dados**, `CLI-005` cita
-as operações corretas e a concordância caiu para 30%. Isso não invalida a leitura acima — ela é
-sobre a execução atual — mas é evidência direta, não só teórica, do problema de reprodutibilidade
-tratado em [`ARQUITETURA.md`](ARQUITETURA.md): a mesma pergunta, feita duas vezes, rendeu um
-parecer factualmente errado numa vez e correto na outra. Isso é mais sério que qualquer
-divergência regra-vs-agente isolada: significa que **este próprio documento estaria diferente**
-se eu tivesse rodado o lote uma terceira vez, e é por isso que a seção 3 propõe tratar o parecer
-como artefato versionado por hash, não como algo recalculável sob demanda.
+O caso mais didático é `CLI-029`: o parecer **reconhece explicitamente** o fracionamento
+("4 operações em 2026-05-26, totalizando R$ 71.297,68... indica possível tentativa de evitar
+reporte") e mesmo assim classifica como médio. Ele não errou o fato; discordou da gravidade.
+
+### Mas a verificação de aderência mostrou que "discordar bem" não é a história toda
+
+Aqui as duas análises se cruzam, e o resultado é menos favorável ao agente do que a leitura
+acima sugeriria isolada: dos 7 pareceres válidos, **3 estavam fundamentados na operação errada**
+(ver seção de verificação de aderência). Ou seja, parte da "divergência de limiar" foi produzida
+por um raciocínio ancorado no número errado — `CLI-013` classificou como médio depois de apontar
+como "atípica" uma operação de R$ 312,54, a menor da base do cliente.
+
+**A conclusão honesta**: a divergência sistemática é real e interessante, mas eu não posso
+afirmar que ela representa um julgamento melhor que o da regra, porque em 3 dos 7 casos o
+julgamento partiu de premissa factualmente errada. É exatamente por isso que a verificação de
+aderência precisa rodar **antes** de qualquer análise de divergência — sem ela, eu teria escrito
+uma seção elogiando o discernimento do agente.
+
+### Nota de não-determinismo
+
+Execuções anteriores deste mesmo confronto, com o **mesmo código e os mesmos dados**, deram
+**50%** e depois **30%** de concordância (ambas preservadas no histórico do git). Numa delas o
+parecer de `CLI-005` citava R$ 409,16 como a operação atípica — valor abaixo da mediana, portanto
+errado; noutra, citava as corretas. Isso significa que **este próprio documento estaria diferente**
+a cada reexecução, e foi o que motivou o cache por hash descrito adiante. Os números desta seção
+valem para as saídas commitadas em `outputs/`, que agora são estáveis justamente porque o parecer
+deixou de ser recalculado a cada rodada.
 
 ## Nível 3: Trilha B (MCP)
 
