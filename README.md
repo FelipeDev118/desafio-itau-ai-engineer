@@ -126,9 +126,9 @@ observabilidade de custo). Nenhum arquivo obrigatório foi renomeado, movido ou 
 - A **concordância entre regra e agente variou entre execuções** (50%, depois 30%, depois 40%,
   com código equivalente e os mesmos dados) — essa instabilidade em si é um achado central. Na
   execução commitada, as **6 divergências apontam todas na mesma direção** (regra `alto` → agente
-  `médio`): diferença sistemática de limiar, não ruído. Mas a verificação de aderência qualifica
-  essa leitura — na maioria dos pareceres válidos (7 de 10) o raciocínio partiu da operação
-  errada, então não dá para chamar a divergência de "julgamento melhor". Análise em
+  `médio`): diferença sistemática de limiar, não ruído — e a verificação de aderência (ver abaixo)
+  mostra que, na maioria dos casos (8 de 10), o raciocínio parte de premissas corretas, então a
+  divergência não é (só) leitura errada dos dados. Análise em
   [`docs/DECISOES.md`](docs/DECISOES.md#critério-do-confronto-intensidade-não-coincidência-de-regras).
 - **Cache por hash de entrada** (`nivel_2/cache_parecer.py`) resolve essa instabilidade *entre
   reexecuções do pipeline*: parecer já gerado é reaproveitado em vez de recalculado. Provado, não
@@ -142,10 +142,18 @@ observabilidade de custo). Nenhum arquivo obrigatório foi renomeado, movido ou 
   número auditável por si só, não escondido dentro da concordância.
 - **O achado mais forte de todos**: uma verificação de aderência sem LLM
   (`nivel_2/verificacao_aderencia.py`) confere se os valores citados na justificativa existem de
-  fato na base do cliente — e revelou que **apenas 3 dos 10 pareceres válidos estão fundamentados
-  na operação certa** (era 4/7 ≈ 57% antes de corrigir o esgotamento de turnos — a proporção
-  piorou, não melhorou, porque os dois problemas são independentes). `CLI-028` chamou de "único
-  evento de valor atípico" uma operação de R$ 6.913,84, quando as duas operações que de fato têm
-  a flag ativa para esse cliente são de R$ 27.715,48 e R$ 24.875,39 — mais que o dobro. Nenhum
-  desses erros é perceptível lendo o texto — todos soam plausíveis. Resultado em
+  fato na base do cliente. Primeira leitura pós-correção do `max_turnos`: só 3/10 pareceres
+  fundamentados, pior que os 4/7 (~57%) de antes — e essa leitura **estava errada**. Reauditando
+  cada caso contra os dados reais, achei **3 bugs no próprio verificador** (mediana confundida com
+  uma operação real quando o cliente tem número ímpar de operações; regex que truncava números em
+  formato americano — `R$71,297.68` virava `71.29` — e abreviações como `R$14.3k`; soma por canal
+  ausente das referências válidas, embora `perfil_canal()` seja uma das 3 ferramentas do agente).
+  Corrigidos, um a um, contra evidência real de cada caso: **8/10 pareceres fundamentados** — melhor
+  do que antes, não pior. Dos 2 que restam, só 1 é erro real do agente: `CLI-028` chamou de "único
+  evento de valor atípico" uma operação de R$ 6.913,84, quando as duas operações que de fato têm a
+  flag ativa para esse cliente são de R$ 27.715,48 e R$ 24.875,39 — mais que o dobro. A lição maior
+  que o número: quase virou "o fix do max_turnos piorou a aderência" com base num verificador que,
+  ele mesmo, não tinha sido verificado. Análise completa e testes de regressão em
+  [`docs/DECISOES.md`](docs/DECISOES.md#o-verificador-de-aderência-tinha-bugs-próprios--corrigido)
+  e [`tests/test_verificacao_aderencia.py`](tests/test_verificacao_aderencia.py). Resultado em
   [`outputs/aderencia_pareceres.csv`](outputs/aderencia_pareceres.csv).

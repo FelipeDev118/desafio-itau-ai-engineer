@@ -32,9 +32,19 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-# R$ 14.326,29 | R$14.326,29 | R$ 7.330 | R$312,54 | R$ 88.750,8
+# R$ 14.326,29 | R$14.326,29 | R$ 7.330 | R$312,54 | R$ 88.750,8 | R$71,297.68 (formato
+# americano, milhar por virgula) | R$14.3k (abreviado, "k" = mil - ambos vistos na base real)
+# Alternativas com separador de milhar (BR: ponto+3 digitos; US: virgula+3 digitos) vem
+# primeiro, senao a captura para no meio do numero e trunca (era o bug: "71,297.68"
+# virava "71,29" -> 71.29).
 PADRAO_VALOR_RS = re.compile(
-    r"R\$\s?(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:,\d{1,2})?)"
+    r"R\$\s?("
+    r"\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?"    # BR com milhar: 14.326,29 | 7.330
+    r"|\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?"   # US com milhar: 71,297.68 | 71,297
+    r"|\d+,\d{1,2}"                          # BR sem milhar: 312,54
+    r"|\d+\.\d{1,2}(?!\d)"                  # US sem milhar: 312.54
+    r"|\d+"                                    # inteiro puro: 88
+    r")\s*(?P<k>[kK])?\b"
 )
 
 # O modelo tambem escreve valor sem "R$", com sufixo "BRL" - e formato numerico
@@ -46,12 +56,22 @@ PADRAO_VALOR_BRL_SUFIXO = re.compile(
 
 # Palavras que, aparecendo logo antes do valor, indicam limiar/qualificador, nao uma
 # transacao ou agregado especifico sendo citado ("valores superiores a R$3.000").
+# "entre" entra aqui pelo mesmo motivo: "entre R$14.3k e R$19.4k" e faixa aproximada
+# (o modelo arredondando os extremos reais, 14326.29 e 19418.96), nao uma citacao
+# exata - achado real em CLI-029/CLI-017 ao reauditar o lote reexecutado.
 QUALIFICADORES = re.compile(
     r"(superior(?:es)?\s+a|acima\s+de|abaixo\s+de|menos\s+de|mais\s+de|"
     r"pr[oó]xim[oa]s?\s+(?:a|de)|cerca\s+de|aproximadamente|em\s+torno\s+de|"
-    r"at[ée])\s*$",
+    r"at[ée]|entre)\s*$",
     re.IGNORECASE,
 )
+
+# O segundo limite de uma faixa ("...e R$19.4k") nao tem uma palavra-gatilho antes de
+# si - "e" sozinho e comum demais para servir de marcador sem falsos positivos. Em vez
+# disso, propaga o "e_limiar" do primeiro limite para o segundo quando os dois estao
+# ligados so por espaco + "e" + espaco (+ o "R$" do proximo valor, ja que o inicio
+# capturado e apos o "R$" - ver extrair_valores).
+CONECTOR_FAIXA = re.compile(r"^\s*e\s*(?:R\$)?\s*$", re.IGNORECASE)
 
 TOLERANCIA_R = 0.5  # cobre "R$7.330" citando 7330.00 sem casas decimais
 JANELA_CONTEXTO = 25  # caracteres antes do valor, para checar qualificador
@@ -65,15 +85,23 @@ PADRAO_ATIPICO = re.compile(r"at[ií]pic", re.IGNORECASE)
 
 
 def _parsear_valor_brl(bruto: str) -> float:
-    """Lida com os dois formatos que o modelo produz, sem assumir um so:
-      '14.326,29' -> 14326.29   (BR: virgula decimal, ponto de milhar)
+    """Lida com os formatos que o modelo produz, sem assumir um so:
+      '14.326,29' -> 14326.29   (BR: ponto de milhar, virgula decimal)
+      '71,297.68' -> 71297.68   (US: virgula de milhar, ponto decimal)
       '7.330'     -> 7330.0     (BR: ponto de milhar, sem decimais)
-      '5016.62'   -> 5016.62    (US: ponto decimal, 2 casas no fim, sem virgula)
-    A regra: se ha virgula, o formato e BR. Se nao ha virgula mas ha um ponto seguido
-    de exatamente 2 digitos no fim, tratamos como decimal americano."""
-    if "," in bruto:
+      '5016.62'   -> 5016.62    (US: ponto decimal, sem milhar)
+    Quando os dois separadores aparecem, o DECIMAL e o que vem por ultimo na string
+    (BR: ponto...virgula: 14.326,29; US: virgula...ponto: 71,297.68) - o outro e milhar
+    e e descartado. Quando so um aparece, um ponto seguido de exatamente 2 digitos no
+    fim e decimal americano; senao e milhar BR."""
+    tem_ponto, tem_virgula = "." in bruto, "," in bruto
+    if tem_ponto and tem_virgula:
+        if bruto.rfind(",") > bruto.rfind("."):
+            return float(bruto.replace(".", "").replace(",", "."))  # BR
+        return float(bruto.replace(",", ""))  # US
+    if tem_virgula:
         return float(bruto.replace(".", "").replace(",", "."))
-    if re.search(r"\.\d{2}$", bruto):
+    if re.search(r"\.\d{1,2}$", bruto):
         return float(bruto)
     return float(bruto.replace(".", ""))
 
@@ -83,7 +111,8 @@ def extrair_valores(texto: str) -> list[dict]:
     transacao/agregado de valores citados como limiar textual.
 
     Deduplica por posicao para nao contar duas vezes um valor que casasse nos dois
-    padroes (ex.: "R$ 100,00 BRL")."""
+    padroes (ex.: "R$ 100,00 BRL"). Um "k" logo apos o numero ("R$14.3k") e abreviacao
+    de mil - visto na base real em faixas como "entre R$14.3k e R$19.4k"."""
     achados: dict[int, dict] = {}
     for padrao in (PADRAO_VALOR_RS, PADRAO_VALOR_BRL_SUFIXO):
         for m in padrao.finditer(texto):
@@ -91,14 +120,32 @@ def extrair_valores(texto: str) -> list[dict]:
                 valor = _parsear_valor_brl(m.group(1))
             except ValueError:
                 continue  # captura ampla do padrao BRL pode pegar lixo tipo "1.2.3"
+            if m.groupdict().get("k"):
+                valor *= 1000
             contexto_antes = texto[max(0, m.start() - JANELA_CONTEXTO):m.start()]
             janela = texto[max(0, m.start() - JANELA_ATIPICO):m.end() + JANELA_ATIPICO]
             achados[m.start(1)] = {
                 "valor": valor,
                 "e_limiar": bool(QUALIFICADORES.search(contexto_antes)),
                 "citado_como_atipico": bool(PADRAO_ATIPICO.search(janela)),
+                "inicio": m.start(1),
+                "fim": m.end(),
             }
-    return [achados[k] for k in sorted(achados)]
+
+    ordenados = [achados[k] for k in sorted(achados)]
+    # propaga e_limiar do 1o limite de uma faixa ("entre X e Y") para o 2o: os dois
+    # ficam ligados so por espaco + "e" + espaco, sem palavra-gatilho propria antes
+    # do segundo valor.
+    for anterior, atual in zip(ordenados, ordenados[1:]):
+        if anterior["e_limiar"] and not atual["e_limiar"]:
+            entre = texto[anterior["fim"]:atual["inicio"]]
+            if CONECTOR_FAIXA.match(entre):
+                atual["e_limiar"] = True
+
+    return [
+        {k: v for k, v in item.items() if k not in ("inicio", "fim")}
+        for item in ordenados
+    ]
 
 
 @dataclass
@@ -115,15 +162,22 @@ class Aderencia:
 
 
 def _referencias_validas(cliente_id: str, df: pd.DataFrame) -> dict[str, float]:
-    """Todo numero que seria legitimo citar sobre este cliente: cada operacao
-    individual, os agregados do cliente inteiro, e a soma de cada data que tem 3+
-    operacoes (candidata a ser citada por fracionamento, com ou sem a flag ter
-    disparado oficialmente - o agente pode descrever o padrao mesmo perto do limite)."""
+    """Todo numero que seria legitimo citar sobre este cliente: os agregados do
+    cliente inteiro, a soma de cada data e de cada canal com 2+ operacoes, e cada
+    operacao individual - nesta ordem, de propósito (ver abaixo).
+
+    Quando o cliente tem um numero impar de operacoes, a mediana e, por definicao,
+    igual ao valor de uma operacao real do meio da distribuicao - nao coincidencia,
+    matematica. Se essa operacao aparecesse primeiro no dict, verificar() atribuiria
+    a ela (fonte "operacao X") uma citacao que na verdade e da mediana ("valor mediano
+    de R$X, indicando..."), e o filtro de contexto (citado_como_atipico + fonte
+    comeca com "operacao") dispararia um falso positivo de "atipico incorreto" -
+    aconteceu de verdade com CLI-014 e CLI-005 (ambos com 11 operacoes) numa
+    reexecucao do lote. Agregados vem primeiro para que, em caso de empate de valor,
+    a citacao seja atribuida ao agregado - a leitura mais provavel quando o proprio
+    texto diz "mediano"/"medio"/"total"."""
     sub = df[df["cliente_id"] == cliente_id]
     refs: dict[str, float] = {}
-
-    for _, row in sub.iterrows():
-        refs[f"operacao {row['id']}"] = round(float(row["valor_brl"]), 2)
 
     refs["volume_total_cliente"] = round(float(sub["valor_brl"].sum()), 2)
     refs["media_cliente"] = round(float(sub["valor_brl"].mean()), 2)
@@ -135,6 +189,17 @@ def _referencias_validas(cliente_id: str, df: pd.DataFrame) -> dict[str, float]:
             refs[f"soma_do_dia_{data.strftime('%Y-%m-%d')}"] = round(
                 float(grupo["valor_brl"].sum()), 2
             )
+
+    # Idem para canal: perfil_canal() (uma das 3 ferramentas do agente) devolve volume
+    # por canal, e o parecer pode citar essa soma ("R$X concentrado em duas operacoes
+    # TED"). Sem esta referencia, um valor legitimo (mas nao individual nem agregado
+    # do cliente inteiro) e reportado como "nao encontrado" - achado real em CLI-030.
+    for canal, grupo in sub.groupby("canal"):
+        if len(grupo) >= 2:
+            refs[f"soma_canal_{canal}"] = round(float(grupo["valor_brl"].sum()), 2)
+
+    for _, row in sub.iterrows():
+        refs[f"operacao {row['id']}"] = round(float(row["valor_brl"]), 2)
 
     return refs
 

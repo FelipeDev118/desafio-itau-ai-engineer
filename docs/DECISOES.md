@@ -154,24 +154,28 @@ mudando de lado entre rodadas.
 
 ### Mas a verificação de aderência mostrou que "discordar bem" não é a história toda
 
-Aqui as duas análises se cruzam, e o resultado é menos favorável ao agente do que a leitura
-acima sugeriria isolada: dos 10 pareceres válidos da execução atual, **apenas 3 estão
-fundamentados na operação certa** — pior em proporção do que os 4/7 (~57%) da execução anterior
-a corrigir o esgotamento de turnos, não melhor. Corrigir o chute de data resolveu o problema que
-ele foi desenhado para resolver (resposta válida: 70%→100%) e não tinha por que resolver este
-outro: são defeitos independentes, um de *quando* chamar uma ferramenta, outro de *qual número*
-citar depois de já ter os dados. `CLI-028` ilustra o segundo: o parecer aponta como "único evento
-de valor atípico" uma operação de R$ 6.913,84, mas as operações que de fato carregam
-`flag_valor_atipico=True` para esse cliente são de R$ 27.715,48 e R$ 24.875,39 — mais que o dobro
-do valor citado.
+Aqui as duas análises se cruzam. Numa primeira leitura, logo após corrigir o esgotamento de
+turnos, o resultado parecia pior do que antes: só 3 dos 10 pareceres válidos fundamentados,
+contra 4/7 (~57%) na execução anterior. Essa leitura **estava errada** — não porque o agente
+piorou, mas porque o próprio verificador tinha 3 bugs que inflavam falsos "não fundamentado"
+(ver seção abaixo, "O verificador de aderência tinha bugs próprios"). Corrigidos os bugs, o
+número real é **8/10 fundamentados** — melhor do que a execução anterior, não pior.
 
-**A conclusão honesta**: a divergência sistemática é real e interessante, mas eu não posso
-afirmar que ela representa um julgamento melhor que o da regra, porque na maioria dos casos válidos
-(7 de 10) o julgamento partiu de premissa factualmente errada. É exatamente por isso que a
-verificação de aderência precisa rodar **antes** de qualquer análise de divergência — sem ela, eu
-teria escrito uma seção elogiando o discernimento do agente. E é por isso, também, que "consertar
-o agente" não é uma linha só: max_turnos e aderência são bugs diferentes, com correções diferentes,
-e um não avança o outro.
+Dos 2 casos que continuam não fundamentados, só 1 é um erro real do agente: `CLI-028` aponta como
+"único evento de valor atípico" uma operação de R$ 6.913,84, mas as operações que de fato carregam
+`flag_valor_atipico=True` para esse cliente são de R$ 27.715,48 e R$ 24.875,39 — mais que o dobro
+do valor citado. O outro (`CLI-001`) não é um erro de fundamentação, é a ausência dela: o parecer
+não cita nenhum valor em R$, só qualificadores vagos ("valores médios significativamente
+superiores ao mediano") — não há o que verificar, para o bem ou para o mal.
+
+**A conclusão honesta, revisada**: a divergência sistemática (regra `alto` → agente `médio`)
+continua real, e agora há evidência mais forte de que não é fruto de raciocínio mal fundamentado
+— 8 dos 10 pareceres partem de premissas corretas. Isso não prova que o critério do agente é
+"melhor" que o da regra (são dois desenhos de threshold, ver acima), mas derruba a hipótese mais
+fraca de que a divergência era apenas erro de leitura dos dados. E o episódio deixa uma lição
+maior que o número em si: a primeira medição pós-correção **também precisava ser auditada antes
+de virar afirmação** — quase escrevi "consertar o max_turnos piorou a aderência" com base num
+verificador que, ele mesmo, não tinha sido verificado.
 
 ### Nota de não-determinismo
 
@@ -360,12 +364,56 @@ reaproveitar pareceres cacheados com a instrução antiga.
 2. Reexecutei o lote completo dos 10 clientes (`nivel_2/lote.py`, sem cache aproveitável — o bump
    de `VERSAO_PROMPT` invalidou as entradas antigas) e reauditei com `confronto.py` e
    `verificacao_aderencia.py`. Resultado: **10/10 respostas válidas, 0 esgotamentos** (era 7/10,
-   3 esgotando). O efeito colateral: **a aderência não melhorou** — 3/10 pareceres corretamente
-   fundamentados nesta execução, contra 4/7 (~57%) antes. Isso é esperado, não uma regressão desta
-   correção: consertar *quando* o agente chama uma ferramenta não muda *qual número* ele cita
-   depois de ter os dados — são bugs independentes (ver "Mas a verificação de aderência mostrou
-   que 'discordar bem' não é a história toda", acima). Números atualizados no README e na tabela
-   de confronto desta seção.
+   3 esgotando). A primeira leitura da aderência (3/10 fundamentados) **estava errada por bug do
+   verificador**, não por regressão do agente — corrigido o verificador, o número real é 8/10.
+   Ver "O verificador de aderência tinha bugs próprios", abaixo, e "Mas a verificação de aderência
+   mostrou que 'discordar bem' não é a história toda", acima, para os dois lados dessa história.
+   Números atualizados no README e na tabela de confronto desta seção.
+
+## O verificador de aderência tinha bugs próprios — corrigido
+
+Ao investigar por que a aderência parecia ter piorado depois do fix de `max_turnos` (3/10 contra
+4/7 antes), auditei os 7 pareceres marcados como "não fundamentado" um a um contra os dados reais
+— o mesmo cuidado que o `verificacao_aderencia.py` deveria estar aplicando ao agente. Achado: 3
+bugs no próprio verificador (`nivel_2/verificacao_aderencia.py`), nenhum no agente:
+
+1. **Mediana confundida com operação individual.** Quando o cliente tem número ímpar de
+   operações, a mediana é, por definição matemática, igual ao valor de uma operação real do meio
+   da distribuição — não coincidência. `_referencias_validas()` registrava as operações antes dos
+   agregados, então a busca por `fonte` retornava "operação X" para esse valor, e o filtro de
+   contexto (`citado_como_atipico` + `fonte` começa com "operação") acusava falso "atípico
+   incorreto" sempre que a frase mencionava a mediana perto da palavra "atípico" — mesmo sendo
+   uma observação genérica ("valor mediano de R$X, indicando presença de transações atípicas"),
+   não uma citação daquela operação específica. Afetou `CLI-014` e `CLI-005` (ambos com 11
+   operações). **Correção**: agregados (volume/média/mediana), depois somas por dia e por canal,
+   depois operações individuais — nesta ordem — para que um empate de valor resolva para o
+   agregado, a leitura mais provável quando o texto diz "mediano"/"médio"/"total".
+2. **Regex truncava formato americano e abreviação "k".** O modelo escreveu, na mesma execução,
+   `R$71,297.68` (milhar por vírgula, decimal por ponto — formato americano) e `R$14.3k`
+   (abreviação de mil). O regex só entendia o formato BR (`14.326,29`) e cortava os outros no
+   meio: `71,297.68` virava `71.29`, `14.3k` virava `14.0`. Um parecer **correto** (o valor citado
+   era real) parecia "não fundamentado" só por bug de parsing. Afetou `CLI-029` e `CLI-017`.
+   **Correção**: alternativas de regex para milhar por ponto (BR) e por vírgula (US), decisão de
+   formato pelo separador que aparece **por último** na string, e captura do sufixo `k` com
+   multiplicação por 1000.
+3. **Soma por canal não existia como referência.** `CLI-030` citou "R$85.546,51 concentrados em
+   duas operações TED" — valor real (soma exata de duas operações reais do canal TED), mas
+   `_referencias_validas()` só conhecia somas por data (fracionamento) e agregados do cliente
+   inteiro, nunca por canal — embora `perfil_canal()` seja uma das 3 ferramentas do agente e
+   devolva exatamente esse número. **Correção**: soma por canal com 2+ operações, no mesmo
+   espírito da soma por dia que já existia.
+
+Um quarto ajuste, descoberto no mesmo processo: `CLI-029`/`CLI-017` também descreviam faixas
+aproximadas ("entre R$14.3k e R$19.4k", arredondando os extremos reais 14.326,29 e 19.418,96) —
+nem bug, nem citação exata, é a mesma categoria dos qualificadores textuais que o verificador já
+tratava ("superior a R$X"). Estendi `QUALIFICADORES` para reconhecer "entre" e propaguei o
+`e_limiar` do primeiro limite da faixa para o segundo.
+
+**Validação**: reaudita dos mesmos 10 pareceres (sem chamar a API de novo — só a lógica de
+grounding mudou) após cada correção: 3/10 → 5/10 (bug 1) → 6/10 (bug 3) → 8/10 (bug 2 + faixa).
+Testes de regressão para os 4 casos em `tests/test_verificacao_aderencia.py`. Dos 2 que continuam
+não fundamentados, 1 é erro real do agente (`CLI-028`) e 1 não tem valor citável nenhum
+(`CLI-001`, correto por definição, não um bug).
 
 ## Pressupostos das regras que dados reais violam
 
