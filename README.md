@@ -45,7 +45,7 @@ Nível 2 (a partir da pasta `nivel_2/`):
 ```bash
 cd nivel_2
 python dados.py        # regras em escala + top 10 clientes sinalizados
-python lote.py         # roda o agente sobre os 10 clientes -> outputs/
+python lote.py         # roda o agente sobre os 30 clientes da base -> outputs/
 python confronto.py    # confronta regra vs. agente -> outputs/
 ```
 
@@ -69,7 +69,7 @@ observabilidade de custo). Nenhum arquivo obrigatório foi renomeado, movido ou 
 | `nivel_2/agente.py` | Agente com function calling nativo — o modelo decide quais tools chamar. |
 | `nivel_2/confronto.py` | Confronto entre `nivel_risco` do agente e as flags determinísticas. |
 | ➕ `nivel_2/dados.py` | Carga, limpeza e regras reaproveitadas do Nível 1 sobre a base maior. |
-| ➕ `nivel_2/lote.py` | Execução em lote sobre os 10 clientes mais sinalizados. |
+| ➕ `nivel_2/lote.py` | Execução em lote sobre os 30 clientes da base (`todos=False` restringe aos mais sinalizados). |
 | ➕ `nivel_2/observabilidade.py` | Custo e latência por chamada de API (bônus). |
 | ➕ `nivel_2/cache_parecer.py` | Cache por hash da entrada — reprodutibilidade entre execuções. |
 | ➕ `nivel_2/verificacao_aderencia.py` | Confere se o parecer cita números que existem na base. |
@@ -91,9 +91,9 @@ observabilidade de custo). Nenhum arquivo obrigatório foi renomeado, movido ou 
   enquadra), parecer estruturado validado com Pydantic e tratamento de resposta malformada,
   duas versões de prompt comparadas com métricas de tokens e latência.
 - **Nível 2 — completo.** Regras reaproveitadas em escala sem reescrita, três ferramentas,
-  agente com function calling nativo (usa 3 padrões distintos de ferramentas entre os 10
-  clientes — não chama todas sempre), lote sobre os 10 clientes com registro de custo/latência
-  por chamada, e confronto regra vs. modelo com análise das divergências.
+  agente com function calling nativo (decide quais ferramentas usar, não chama todas sempre),
+  lote sobre os **30 clientes da base** com registro de custo/latência por chamada, e confronto
+  regra vs. modelo com análise das divergências.
 - **Nível 3 — completo (Trilha B).** As ferramentas do Nível 2 são expostas por um servidor MCP
   local via stdio e consumidas pelo protocolo, com descoberta em runtime — o agente não tem mais
   a lista de ferramentas hardcoded. Validado comparando as duas vias: payload das ferramentas
@@ -117,18 +117,30 @@ observabilidade de custo). Nenhum arquivo obrigatório foi renomeado, movido ou 
     `datas_fracionamento` + `montar_flags`).
   - Clientes **sem** flag de fracionamento (só valor atípico) faziam o agente "pescar"
     `operacoes_do_dia` com datas chutadas, sem grounding — consumindo os 4 turnos disponíveis sem
-    sobrar um para a resposta final. 3 dos 10 clientes do top 10 esgotavam `max_turnos` por causa
-    disso. Corrigido deixando explícito no prompt que a ferramenta só deve ser chamada com uma
-    data fornecida ou já observada — nunca inventada — e que não investigar por falta de pista é
-    uma decisão válida. Resultado após a correção: **10/10 respostas válidas** (era 7/10).
+    sobrar um para a resposta final, esgotando `max_turnos` em 3 dos 10 clientes mais sinalizados.
+    Corrigido deixando explícito no prompt que a ferramenta só deve ser chamada com uma data
+    fornecida ou já observada — nunca inventada — e que não investigar por falta de pista é uma
+    decisão válida. Resultado, confirmado depois nos 30 clientes da base: **30/30 respostas
+    válidas** (era 7/10 antes da correção, sobre o top 10).
   Análise completa de ambos, incluindo efeitos colaterais descobertos em cada correção, em
   [`docs/DECISOES.md`](docs/DECISOES.md#o-agente-não-usava-operacoes_do_dia-nos-casos-de-fracionamento--corrigido).
-- A **concordância entre regra e agente variou entre execuções** (50%, depois 30%, depois 40%,
-  com código equivalente e os mesmos dados) — essa instabilidade em si é um achado central. Na
-  execução commitada, as **6 divergências apontam todas na mesma direção** (regra `alto` → agente
-  `médio`): diferença sistemática de limiar, não ruído — e a verificação de aderência (ver abaixo)
-  mostra que, na maioria dos casos (8 de 10), o raciocínio parte de premissas corretas, então a
-  divergência não é (só) leitura errada dos dados. Análise em
+- **Lote passou a cobrir os 30 clientes da base**, não só os 10 mais sinalizados — existe para
+  medir o falso negativo que nenhuma métrica anterior media: um cliente sem flag determinística
+  ainda seria marcado como risco pelo agente? Nesta base, não: os 13 clientes sem nenhuma
+  sinalização concordaram trivialmente com `baixo` risco. `nivel_2/dados.py` ganhou
+  `todos_os_clientes()`; `lote.py` e `confronto.py` usam por padrão (`todos=False` volta ao
+  comportamento antigo). Detalhes em
+  [`docs/DECISOES.md`](docs/DECISOES.md#cobrir-os-30-clientes--corrigido).
+- A **concordância entre regra e agente variou entre execuções** (50%, depois 30%, com código
+  equivalente e os mesmos dados) — essa instabilidade em si é um achado central. Sobre os 30
+  clientes: **77% de concordância no agregado, mas 59% (10/17) só entre os sinalizados** — os
+  outros 13 concordam trivialmente em `baixo`, sem sinal nenhum para discordar; misturar os dois
+  infla o número. Dos 7 divergentes entre os sinalizados, **6 vão na mesma direção** (regra `alto`
+  → agente `médio`) — diferença sistemática de limiar, não ruído — mas **1 vai na direção oposta**
+  (`CLI-021`), o que revisa a afirmação anterior de "sempre a mesma direção": com mais clientes,
+  "sistemática" virou "predominantemente sistemática, com uma exceção". A verificação de aderência
+  (ver abaixo) mostra que, na maioria dos casos (28 de 30), o raciocínio parte de premissas
+  corretas, então a divergência não é (só) leitura errada dos dados. Análise em
   [`docs/DECISOES.md`](docs/DECISOES.md#critério-do-confronto-intensidade-não-coincidência-de-regras).
 - **Cache por hash de entrada** (`nivel_2/cache_parecer.py`) resolve essa instabilidade *entre
   reexecuções do pipeline*: parecer já gerado é reaproveitado em vez de recalculado. Provado, não
@@ -142,18 +154,21 @@ observabilidade de custo). Nenhum arquivo obrigatório foi renomeado, movido ou 
   número auditável por si só, não escondido dentro da concordância.
 - **O achado mais forte de todos**: uma verificação de aderência sem LLM
   (`nivel_2/verificacao_aderencia.py`) confere se os valores citados na justificativa existem de
-  fato na base do cliente. Primeira leitura pós-correção do `max_turnos`: só 3/10 pareceres
-  fundamentados, pior que os 4/7 (~57%) de antes — e essa leitura **estava errada**. Reauditando
-  cada caso contra os dados reais, achei **3 bugs no próprio verificador** (mediana confundida com
-  uma operação real quando o cliente tem número ímpar de operações; regex que truncava números em
-  formato americano — `R$71,297.68` virava `71.29` — e abreviações como `R$14.3k`; soma por canal
-  ausente das referências válidas, embora `perfil_canal()` seja uma das 3 ferramentas do agente).
-  Corrigidos, um a um, contra evidência real de cada caso: **8/10 pareceres fundamentados** — melhor
-  do que antes, não pior. Dos 2 que restam, só 1 é erro real do agente: `CLI-028` chamou de "único
-  evento de valor atípico" uma operação de R$ 6.913,84, quando as duas operações que de fato têm a
-  flag ativa para esse cliente são de R$ 27.715,48 e R$ 24.875,39 — mais que o dobro. A lição maior
-  que o número: quase virou "o fix do max_turnos piorou a aderência" com base num verificador que,
-  ele mesmo, não tinha sido verificado. Análise completa e testes de regressão em
+  fato na base do cliente. Primeira leitura pós-correção do `max_turnos` (sobre 10 clientes): só
+  3/10 pareceres fundamentados, pior que os 4/7 (~57%) de antes — e essa leitura **estava
+  errada**. Reauditando cada caso contra os dados reais, achei **bugs no próprio verificador**:
+  mediana confundida com uma operação real quando o cliente tem número ímpar de operações; regex
+  que truncava números em formato americano (`R$71,297.68` virava `71.29`) e abreviações como
+  `R$14.3k`; soma por canal ausente das referências válidas, embora `perfil_canal()` seja uma das
+  3 ferramentas do agente; tolerância rígida demais para valores abreviados arredondados; e "sem
+  valor citado" tratado como falha mesmo quando o cliente não tem nenhuma flag e não há nada para
+  citar. Corrigidos, um a um, contra evidência real de cada caso, e confirmados sobre os 30
+  clientes da base: **28/30 pareceres fundamentados**. Dos 2 que restam, só 1 é erro real do
+  agente: `CLI-028` chamou de "único evento de valor atípico" uma operação de R$ 6.913,84, quando
+  as duas operações que de fato têm a flag ativa para esse cliente são de R$ 27.715,48 e
+  R$ 24.875,39 — mais que o dobro; o outro (`CLI-001`) tem flag ativa e não cita nenhum número. A
+  lição maior que o número: quase virou "o fix do max_turnos piorou a aderência" com base num
+  verificador que, ele mesmo, não tinha sido verificado. Análise completa e testes de regressão em
   [`docs/DECISOES.md`](docs/DECISOES.md#o-verificador-de-aderência-tinha-bugs-próprios--corrigido)
   e [`tests/test_verificacao_aderencia.py`](tests/test_verificacao_aderencia.py). Resultado em
   [`outputs/aderencia_pareceres.csv`](outputs/aderencia_pareceres.csv).

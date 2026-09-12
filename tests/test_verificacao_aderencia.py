@@ -12,7 +12,7 @@ import pytest
 from verificacao_aderencia import _referencias_validas, _parsear_valor_brl, extrair_valores, verificar
 
 
-def _df_cliente(valores, cliente_id="CLI-1", flags_atipico=None, canais=None):
+def _df_cliente(valores, cliente_id="CLI-1", flags_atipico=None, canais=None, fracionamento=False):
     flags_atipico = flags_atipico or [False] * len(valores)
     canais = canais or ["pix"] * len(valores)
     return pd.DataFrame(
@@ -22,6 +22,7 @@ def _df_cliente(valores, cliente_id="CLI-1", flags_atipico=None, canais=None):
                 "cliente_id": cliente_id,
                 "valor_brl": v,
                 "flag_valor_atipico": flags_atipico[i],
+                "flag_fracionamento": fracionamento,
                 "data": pd.Timestamp("2026-01-01") + pd.Timedelta(days=i),
                 "data_valida": True,
                 "canal": canais[i],
@@ -95,6 +96,35 @@ def test_soma_por_canal_e_referencia_valida():
     )
     refs = _referencias_validas("CLI-1", df)
     assert refs["soma_canal_ted"] == pytest.approx(85546.51)
+
+
+def test_agregado_abreviado_com_k_usa_tolerancia_maior():
+    # achado real em CLI-007: "R$58.6k" e o volume real (58601.43) arredondado para 1
+    # casa decimal de milhar - tolerancia de 0.5 rejeitaria uma citacao correta so
+    # pela abreviacao. soma = 1000+2000+3000+52601.43 = 58601.43 -> "58.6k"
+    df = _df_cliente([1000.0, 2000.0, 3000.0, 52601.43])
+    justificativa = "O cliente movimentou um volume total de R$58.6k no periodo."
+    resultado = verificar("CLI-1", justificativa, df)
+    assert resultado.valores_nao_encontrados == []
+    assert resultado.valores_confirmados == [{"valor": 58600.0, "fonte": "volume_total_cliente"}]
+
+
+def test_cliente_sem_flags_e_sem_citacao_e_fundamentado():
+    # achado real ao cobrir os 30 clientes: 6 clientes SEM nenhuma flag deterministica
+    # tiveram parecer "baixo risco" sem nenhum R$ citado - correto (nao ha o que citar),
+    # nao uma falha de fundamentacao
+    df = _df_cliente([100.0, 200.0, 300.0], flags_atipico=[False, False, False])
+    justificativa = "Sem indicadores de fracionamento ou valores atipicos."
+    resultado = verificar("CLI-1", justificativa, df)
+    assert resultado.fundamentado is True
+    assert resultado.motivo == "cliente sem flags deterministicas - nada a fundamentar"
+
+
+def test_cliente_com_flag_e_sem_citacao_continua_nao_fundamentado():
+    df = _df_cliente([100.0, 200.0, 5000.0], flags_atipico=[False, False, True])
+    justificativa = "Ha indicios de comportamento suspeito que merece atencao."
+    resultado = verificar("CLI-1", justificativa, df)
+    assert resultado.fundamentado is False
 
 
 def test_citar_operacao_errada_como_atipica_ainda_e_detectado():

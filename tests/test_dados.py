@@ -13,6 +13,7 @@ from dados import (
     flag_valor_atipico,
     montar_flags,
     ranking_clientes_sinalizados,
+    todos_os_clientes,
 )
 
 
@@ -180,3 +181,26 @@ def test_ranking_desempata_por_volume_total(tmp_path):
     df = aplicar_regras(df)
     ranking = ranking_clientes_sinalizados(df, top_n=10)
     assert list(ranking["cliente_id"]) == ["CLI-B", "CLI-A"]
+
+
+# ---------- todos_os_clientes ----------
+
+
+def test_todos_os_clientes_inclui_quem_nao_foi_sinalizado(tmp_path):
+    # CLI-A: fracionamento (sinalizado). CLI-B: 1 operacao normal, nenhuma flag.
+    ops = [op(f"A{i}", "CLI-A", "2026-01-01", 19000.0) for i in range(3)] + [
+        op("B0", "CLI-B", "2026-01-01", 500.0)
+    ]
+    caminho = escrever_dataset(tmp_path, ops)
+    df, _ = carregar_e_limpar(caminho)
+    df = aplicar_regras(df)
+
+    sinalizados = ranking_clientes_sinalizados(df, top_n=10)
+    assert list(sinalizados["cliente_id"]) == ["CLI-A"]  # CLI-B fica de fora
+
+    todos = todos_os_clientes(df)
+    assert set(todos["cliente_id"]) == {"CLI-A", "CLI-B"}
+    linha_b = todos[todos["cliente_id"] == "CLI-B"].iloc[0]
+    assert linha_b["total_sinalizacoes"] == 0
+    # sinalizado (CLI-A) vem antes do nao sinalizado (CLI-B) na ordenacao
+    assert list(todos["cliente_id"]) == ["CLI-A", "CLI-B"]

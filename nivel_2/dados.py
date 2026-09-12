@@ -98,10 +98,11 @@ def montar_flags(df: pd.DataFrame, row: pd.Series) -> dict:
     return flags
 
 
-def ranking_clientes_sinalizados(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
-    """Nº de sinalizações por cliente (operação com flag_valor_atipico=True conta 1,
-    cliente com flag_fracionamento=True conta 1 sinalização de cliente), desempate por
-    volume total. Ver DECISOES.md para o critério de contagem."""
+def _agregados_por_cliente(df: pd.DataFrame) -> pd.DataFrame:
+    """Volume, contagem e sinalizações por cliente - TODOS os clientes da base, sem
+    filtro nem ordenação. Extraída para ser reusada tanto por
+    ranking_clientes_sinalizados() (só os sinalizados) quanto por todos_os_clientes()
+    (a base inteira), sem duplicar o cálculo."""
     por_cliente = df.groupby("cliente_id").agg(
         volume_total_brl=("valor_brl", "sum"),
         qtd_operacoes=("id", "count"),
@@ -115,10 +116,30 @@ def ranking_clientes_sinalizados(df: pd.DataFrame, top_n: int = 10) -> pd.DataFr
         por_cliente["sinalizacoes_fracionamento"]
         + por_cliente["sinalizacoes_valor_atipico"]
     )
+    return por_cliente
+
+
+def ranking_clientes_sinalizados(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
+    """Nº de sinalizações por cliente (operação com flag_valor_atipico=True conta 1,
+    cliente com flag_fracionamento=True conta 1 sinalização de cliente), desempate por
+    volume total. Ver DECISOES.md para o critério de contagem."""
+    por_cliente = _agregados_por_cliente(df)
     ranking = por_cliente[por_cliente["total_sinalizacoes"] > 0].sort_values(
         ["total_sinalizacoes", "volume_total_brl"], ascending=[False, False]
     )
     return ranking.head(top_n).reset_index()
+
+
+def todos_os_clientes(df: pd.DataFrame) -> pd.DataFrame:
+    """Mesmas colunas de ranking_clientes_sinalizados(), mas para TODOS os clientes da
+    base - inclusive os que nenhuma regra sinalizou (sinalizacoes_fracionamento=0,
+    sinalizacoes_valor_atipico=0). Existe para medir o falso negativo que nenhuma
+    métrica atual mede: um cliente sem flag determinística ainda poderia ser marcado
+    como risco pelo agente? Ver DECISOES.md, "Cobrir os 30 clientes"."""
+    por_cliente = _agregados_por_cliente(df)
+    return por_cliente.sort_values(
+        ["total_sinalizacoes", "volume_total_brl"], ascending=[False, False]
+    ).reset_index()
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 {
-  "total_clientes": 10,
-  "respostas_validas": 10,
+  "total_clientes": 30,
+  "respostas_validas": 30,
   "sem_parecer": 0,
-  "taxa_concordancia_entre_validas": 0.4,
-  "concordantes": 4,
-  "divergentes_qualitativas": 6
+  "taxa_concordancia_entre_validas": 0.7667,
+  "concordantes": 23,
+  "divergentes_qualitativas": 7
 }

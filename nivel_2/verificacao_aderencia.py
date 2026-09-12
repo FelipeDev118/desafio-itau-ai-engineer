@@ -74,6 +74,11 @@ QUALIFICADORES = re.compile(
 CONECTOR_FAIXA = re.compile(r"^\s*e\s*(?:R\$)?\s*$", re.IGNORECASE)
 
 TOLERANCIA_R = 0.5  # cobre "R$7.330" citando 7330.00 sem casas decimais
+# "R$58.6k" (achado real em CLI-007) e o agregado 58601.43 arredondado para 1 casa
+# decimal de milhar - erro de arredondamento de ate 50 (metade da menor unidade
+# representada). Tolerancia normal (0.5) rejeitaria uma citacao correta so por causa
+# da abreviacao; nao e o mesmo tipo de erro que citar um numero que nao existe.
+TOLERANCIA_ABREVIADO_K = 50.0
 JANELA_CONTEXTO = 25  # caracteres antes do valor, para checar qualificador
 
 # Verificacao de CONTEXTO (nao so de existencia): quando o texto liga um valor a palavra
@@ -120,14 +125,17 @@ def extrair_valores(texto: str) -> list[dict]:
                 valor = _parsear_valor_brl(m.group(1))
             except ValueError:
                 continue  # captura ampla do padrao BRL pode pegar lixo tipo "1.2.3"
+            tolerancia = TOLERANCIA_R
             if m.groupdict().get("k"):
                 valor *= 1000
+                tolerancia = TOLERANCIA_ABREVIADO_K
             contexto_antes = texto[max(0, m.start() - JANELA_CONTEXTO):m.start()]
             janela = texto[max(0, m.start() - JANELA_ATIPICO):m.end() + JANELA_ATIPICO]
             achados[m.start(1)] = {
                 "valor": valor,
                 "e_limiar": bool(QUALIFICADORES.search(contexto_antes)),
                 "citado_como_atipico": bool(PADRAO_ATIPICO.search(janela)),
+                "tolerancia": tolerancia,
                 "inicio": m.start(1),
                 "fim": m.end(),
             }
@@ -224,8 +232,9 @@ def verificar(cliente_id: str, justificativa: str, df: pd.DataFrame) -> Aderenci
 
     for item in verificaveis:
         v = item["valor"]
+        tolerancia = item.get("tolerancia", TOLERANCIA_R)
         fonte = next(
-            (nome for nome, ref in referencias.items() if abs(v - ref) <= TOLERANCIA_R),
+            (nome for nome, ref in referencias.items() if abs(v - ref) <= tolerancia),
             None,
         )
         if not fonte:
@@ -237,14 +246,25 @@ def verificar(cliente_id: str, justificativa: str, df: pd.DataFrame) -> Aderenci
         # existe, mas foi citado como atipico sendo que nao e?
         if item["citado_como_atipico"] and fonte.startswith("operacao"):
             e_atipico_real = any(
-                abs(v - real) <= TOLERANCIA_R for real in valores_atipicos_reais
+                abs(v - real) <= tolerancia for real in valores_atipicos_reais
             )
             if not e_atipico_real:
                 resultado.atipicos_incorretos.append({"valor": v, "fonte": fonte})
 
     if not citados:
-        resultado.fundamentado = False
-        resultado.motivo = "nenhum valor verificavel citado (so limiares, ou nenhum R$ no texto)"
+        # Cliente sem NENHUMA flag deterministica (nem fracionamento, nem valor
+        # atipico): a justificativa nao ter numero para citar e o esperado, nao uma
+        # falha de fundamentacao - achado real ao cobrir os 30 clientes (6 dos "nao
+        # fundamentados" eram na verdade clientes baixo risco descrevendo
+        # corretamente a ausencia de anomalia, ex.: "sem indicadores de fracionamento
+        # ou valores atipicos"). So marca como nao fundamentado quando o cliente TEM
+        # flag e mesmo assim nao cita nada (esse caso continua sendo uma falha real).
+        tem_flag = bool(sub["flag_fracionamento"].any() or sub["flag_valor_atipico"].any())
+        if tem_flag:
+            resultado.fundamentado = False
+            resultado.motivo = "nenhum valor verificavel citado (so limiares, ou nenhum R$ no texto)"
+        else:
+            resultado.motivo = "cliente sem flags deterministicas - nada a fundamentar"
     elif resultado.valores_nao_encontrados:
         resultado.fundamentado = False
         resultado.motivo = (

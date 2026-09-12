@@ -1354,5 +1354,875 @@
     "latencia_s": 7.22,
     "cache_hit": false,
     "hash_entrada": "8d6f7fa4ad1035ba"
+  },
+  "713a3d97f92f980f": {
+    "cliente_id": "CLI-002",
+    "parecer": {
+      "nivel_risco": "alto",
+      "tipologia_suspeita": "Fracionamento de valores (estruturação) em múltiplas operações",
+      "red_flags": [
+        "flag_fracionamento",
+        "concentração de volume significativo em um único dia (64.7k em 4 operações)",
+        "valores individuais acima da média histórica (14k-18k vs média 7.7k)",
+        "uso predominante de pix para depósitos e transferências recebidas",
+        "variedade de contrapartes comerciais em operações de alto valor"
+      ],
+      "justificativa": "O cliente apresentou 4 operações no dia 2026-05-01 totalizando 64.723,09 BRL, representando cerca de 60% do volume total histórico em apenas 4 transações. Os valores são semelhantes e superiores à média histórica (7.711,81 BRL), configurando padrão de fracionamento para evitar detecção. A presença de múltiplas contrapartes e o uso de canais de alta velocidade (pix) reforçam a suspeita de estruturação de recursos."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "operacoes_do_dia",
+        "args": {
+          "cliente_id": "CLI-002",
+          "data": "2026-05-01"
+        }
+      },
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-002"
+        }
+      }
+    ],
+    "tokens_total": 1988,
+    "latencia_s": 3.34,
+    "cache_hit": false,
+    "hash_entrada": "713a3d97f92f980f",
+    "flags_deterministicas": {
+      "flag_fracionamento": true,
+      "flag_valor_atipico": false,
+      "datas_fracionamento": [
+        "2026-05-01"
+      ]
+    },
+    "volume_total_brl": 107965.38,
+    "total_sinalizacoes_deterministicas": 1,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "2/2 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 64723.09,
+          "fonte": "soma_do_dia_2026-05-01"
+        },
+        {
+          "valor": 7711.81,
+          "fonte": "media_cliente"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "703b6908542c8d65": {
+    "cliente_id": "CLI-024",
+    "parecer": {
+      "nivel_risco": "medio",
+      "tipologia_suspeita": "Transferências de alto valor via TED",
+      "red_flags": [
+        "valor_atípico",
+        "concentração elevada de volume em TED",
+        "média de operação muito acima da mediana"
+      ],
+      "justificativa": "O cliente apresenta flag de valor atípico e, apesar de um número reduzido de operações (11), o volume total é alto (R$104.854,93) com média de R$9.532,27, muito superior à mediana de R$2.740,78. Três operações de TED concentram R$78.769,12, indicando transferências de valores elevados que fogem ao padrão histórico. Não há indícios de fracionamento, mas a combinação de valor atípico e alta concentração em TED eleva o risco para médio, recomendando monitoramento adicional."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-024"
+        }
+      },
+      {
+        "tool": "perfil_canal",
+        "args": {
+          "cliente_id": "CLI-024"
+        }
+      }
+    ],
+    "tokens_total": 1894,
+    "latencia_s": 3.27,
+    "cache_hit": false,
+    "hash_entrada": "703b6908542c8d65",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": true
+    },
+    "volume_total_brl": 104854.93,
+    "total_sinalizacoes_deterministicas": 1,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "4/4 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 104854.93,
+          "fonte": "volume_total_cliente"
+        },
+        {
+          "valor": 9532.27,
+          "fonte": "media_cliente"
+        },
+        {
+          "valor": 2740.78,
+          "fonte": "mediana_cliente"
+        },
+        {
+          "valor": 78769.12,
+          "fonte": "soma_canal_ted"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "fb1e9ef05605a61a": {
+    "cliente_id": "CLI-003",
+    "parecer": {
+      "nivel_risco": "alto",
+      "tipologia_suspeita": "Fracionamento de valores (structuring)",
+      "red_flags": [
+        "Concentração de volume em um único dia (≈50% do total de transações)",
+        "Múltiplas operações de alto valor em diferentes canais (PIX, TED)",
+        "Flag de fracionamento ativada"
+      ],
+      "justificativa": "O cliente realizou 4 operações em 2026-05-02 somando R$ 50.846,72, representando quase 50% do volume total de R$ 102.241,09 em 14 operações. Essa concentração de valor em um único dia, associada à flag de fracionamento, indica possível tentativa de dividir grandes quantias em múltiplas transações para evitar detecção, caracterizando risco alto de lavagem de dinheiro."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "operacoes_do_dia",
+        "args": {
+          "cliente_id": "CLI-003",
+          "data": "2026-05-02"
+        }
+      },
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-003"
+        }
+      }
+    ],
+    "tokens_total": 2155,
+    "latencia_s": 3.4,
+    "cache_hit": false,
+    "hash_entrada": "fb1e9ef05605a61a",
+    "flags_deterministicas": {
+      "flag_fracionamento": true,
+      "flag_valor_atipico": false,
+      "datas_fracionamento": [
+        "2026-05-02"
+      ]
+    },
+    "volume_total_brl": 102241.09,
+    "total_sinalizacoes_deterministicas": 1,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "2/2 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 50846.72,
+          "fonte": "soma_do_dia_2026-05-02"
+        },
+        {
+          "valor": 102241.09,
+          "fonte": "volume_total_cliente"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "92b74c2ec1197e80": {
+    "cliente_id": "CLI-022",
+    "parecer": {
+      "nivel_risco": "medio",
+      "tipologia_suspeita": "Transferências de alto valor incomuns",
+      "red_flags": [
+        "valor_atípico_detectado",
+        "discrepância significativa entre média (5.676,17) e mediana (1.909,89)",
+        "concentração de operações em transferências recebidas"
+      ],
+      "justificativa": "O cliente apresenta um volume total de R$62.437,92 em apenas 11 operações, com valor médio muito superior ao mediano, indicando a presença de transações de valor atípico. A flag \"valor_atípico\" já foi disparada e, embora não haja indícios de fracionamento, a disparidade entre média e mediana e a predominância de transferências recebidas sugerem comportamento fora do padrão esperado, justificando um risco médio e a necessidade de monitoramento adicional."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-022"
+        }
+      }
+    ],
+    "tokens_total": 2158,
+    "latencia_s": 6.11,
+    "cache_hit": false,
+    "hash_entrada": "92b74c2ec1197e80",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": true
+    },
+    "volume_total_brl": 62437.92,
+    "total_sinalizacoes_deterministicas": 1,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "1/1 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 62437.92,
+          "fonte": "volume_total_cliente"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "cc16e0a734567a60": {
+    "cliente_id": "CLI-007",
+    "parecer": {
+      "nivel_risco": "medio",
+      "tipologia_suspeita": "Transações de valor atípico",
+      "red_flags": [
+        "flag_valor_atipico",
+        "valor médio significativamente acima do mediano",
+        "concentração de volume em poucas operações"
+      ],
+      "justificativa": "O cliente apresenta 11 operações com volume total de R$58.6k, porém o valor médio (R$5.3k) está muito acima do valor mediano (R$3.0k), indicando a presença de transações atípicas de alto valor. A flag de valor atípico foi disparada e não há indícios de fracionamento, sugerindo risco médio que requer monitoramento adicional."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-007"
+        }
+      }
+    ],
+    "tokens_total": 810,
+    "latencia_s": 14.15,
+    "cache_hit": false,
+    "hash_entrada": "cc16e0a734567a60",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": true
+    },
+    "volume_total_brl": 58601.43,
+    "total_sinalizacoes_deterministicas": 1,
+    "aderencia": {
+      "fundamentado": false,
+      "motivo": "3/3 valores citados nao correspondem a nenhuma operacao, soma diaria ou agregado do cliente",
+      "valores_confirmados": [],
+      "valores_nao_encontrados": [
+        58600.0,
+        5300.0,
+        3000.0
+      ],
+      "atipicos_incorretos": []
+    }
+  },
+  "3327d246b4322b39": {
+    "cliente_id": "CLI-008",
+    "parecer": {
+      "nivel_risco": "medio",
+      "tipologia_suspeita": "Valor atípico em transações",
+      "red_flags": [
+        "Valor atípico detectado"
+      ],
+      "justificativa": "O cliente apresenta flag de valor atípico, com média de transação (R$5.299,26) significativamente acima da mediana (R$3.503,48) em apenas 8 operações, indicando possíveis transações fora do padrão habitual. Não há indícios de fracionamento, mas a presença de valores atípicos justifica classificação de risco médio."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-008"
+        }
+      }
+    ],
+    "tokens_total": 787,
+    "latencia_s": 2.25,
+    "cache_hit": false,
+    "hash_entrada": "3327d246b4322b39",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": true
+    },
+    "volume_total_brl": 42394.05,
+    "total_sinalizacoes_deterministicas": 1,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "2/2 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 5299.26,
+          "fonte": "media_cliente"
+        },
+        {
+          "valor": 3503.48,
+          "fonte": "mediana_cliente"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "8041a865a6e4c6e9": {
+    "cliente_id": "CLI-021",
+    "parecer": {
+      "nivel_risco": "alto",
+      "tipologia_suspeita": "Operações de valor atípico com múltiplas contrapartes",
+      "red_flags": [
+        "flag_valor_atipico",
+        "valor médio significativamente acima do mediano",
+        "presença de múltiplas contrapartes distintas"
+      ],
+      "justificativa": "O cliente realizou 10 operações totalizando R$39.761,63, com valor médio de R$3.976,16 muito superior ao valor mediano de R$2.832,55, e a flag de valor atípico está ativada. As operações incluem depósitos e transferências para diferentes contrapartes, indicando movimentação de recursos incomum para o perfil observado, justificando risco alto."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-021"
+        }
+      }
+    ],
+    "tokens_total": 828,
+    "latencia_s": 2.41,
+    "cache_hit": false,
+    "hash_entrada": "8041a865a6e4c6e9",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": true
+    },
+    "volume_total_brl": 39761.63,
+    "total_sinalizacoes_deterministicas": 1,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "3/3 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 39761.63,
+          "fonte": "volume_total_cliente"
+        },
+        {
+          "valor": 3976.16,
+          "fonte": "media_cliente"
+        },
+        {
+          "valor": 2832.55,
+          "fonte": "mediana_cliente"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "883646fee1eb9b99": {
+    "cliente_id": "CLI-011",
+    "parecer": {
+      "nivel_risco": "baixo",
+      "tipologia_suspeita": "atividade financeira regular",
+      "red_flags": [],
+      "justificativa": "O cliente apresentou apenas 9 operações no período analisado, com volume total de R$63.048,64 e valores médios dentro da faixa esperada (R$7.005,40). As flags determinísticas de fracionamento e valor atípico estão desativadas e não há datas específicas de suspeita. Os tipos de operação (pagamento, saque, transferência recebida) e as contrapartes são comuns e não indicam comportamento suspeito. Portanto, o risco de lavagem de dinheiro é considerado baixo."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-011"
+        }
+      }
+    ],
+    "tokens_total": 786,
+    "latencia_s": 7.63,
+    "cache_hit": false,
+    "hash_entrada": "883646fee1eb9b99",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": false
+    },
+    "volume_total_brl": 63048.64,
+    "total_sinalizacoes_deterministicas": 0,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "2/2 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 63048.64,
+          "fonte": "volume_total_cliente"
+        },
+        {
+          "valor": 7005.4,
+          "fonte": "media_cliente"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "6e96cca236b24273": {
+    "cliente_id": "CLI-009",
+    "parecer": {
+      "nivel_risco": "baixo",
+      "tipologia_suspeita": "Nenhuma",
+      "red_flags": [],
+      "justificativa": "O cliente apresenta 11 operações distribuídas entre pagamentos, saques e depósitos, sem indícios de fracionamento ou valores atípicos. As métricas de valor médio e mediano estão dentro de padrões esperados e não há flags determinísticas. Não foram identificados comportamentos suspeitos ou anômalos no histórico fornecido."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-009"
+        }
+      }
+    ],
+    "tokens_total": 1906,
+    "latencia_s": 5.49,
+    "cache_hit": false,
+    "hash_entrada": "6e96cca236b24273",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": false
+    },
+    "volume_total_brl": 47535.95,
+    "total_sinalizacoes_deterministicas": 0,
+    "aderencia": {
+      "fundamentado": false,
+      "motivo": "nenhum valor verificavel citado (so limiares, ou nenhum R$ no texto)",
+      "valores_confirmados": [],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "a2447d2ebb68f065": {
+    "cliente_id": "CLI-010",
+    "parecer": {
+      "nivel_risco": "baixo",
+      "tipologia_suspeita": "Nenhuma",
+      "red_flags": [],
+      "justificativa": "O cliente apresenta 10 operações no período analisado, com volume total de R$46.607,10 e valores médios dentro da faixa esperada. Não foram detectados flags de fracionamento ou valores atípicos, nem há indícios de padrões suspeitos nos tipos de operação ou contrapartes. Assim, o risco de PLD/AML é considerado baixo."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-010"
+        }
+      }
+    ],
+    "tokens_total": 744,
+    "latencia_s": 2.6,
+    "cache_hit": false,
+    "hash_entrada": "a2447d2ebb68f065",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": false
+    },
+    "volume_total_brl": 46607.1,
+    "total_sinalizacoes_deterministicas": 0,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "1/1 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 46607.1,
+          "fonte": "volume_total_cliente"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "975246001195b262": {
+    "cliente_id": "CLI-020",
+    "parecer": {
+      "nivel_risco": "baixo",
+      "tipologia_suspeita": "Nenhum",
+      "red_flags": [],
+      "justificativa": "O cliente apresenta apenas 9 operações no período analisado, sem indicadores de fracionamento ou valores atípicos. Os volumes e frequências são compatíveis com o perfil de uso típico, não havendo sinais de comportamento suspeito."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-020"
+        }
+      }
+    ],
+    "tokens_total": 781,
+    "latencia_s": 1.39,
+    "cache_hit": false,
+    "hash_entrada": "975246001195b262",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": false
+    },
+    "volume_total_brl": 43616.16,
+    "total_sinalizacoes_deterministicas": 0,
+    "aderencia": {
+      "fundamentado": false,
+      "motivo": "nenhum valor verificavel citado (so limiares, ou nenhum R$ no texto)",
+      "valores_confirmados": [],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "88d64a41de878bd3": {
+    "cliente_id": "CLI-016",
+    "parecer": {
+      "nivel_risco": "baixo",
+      "tipologia_suspeita": "Nenhuma",
+      "red_flags": [],
+      "justificativa": "O cliente apresentou 11 operações no período analisado, com volume e valores médios dentro de padrões esperados e sem indicadores de fracionamento ou valores atípicos. Não foram detectadas flags determinísticas nem comportamentos suspeitos nos tipos de operação ou contrapartes."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-016"
+        }
+      }
+    ],
+    "tokens_total": 780,
+    "latencia_s": 1.41,
+    "cache_hit": false,
+    "hash_entrada": "88d64a41de878bd3",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": false
+    },
+    "volume_total_brl": 42560.82,
+    "total_sinalizacoes_deterministicas": 0,
+    "aderencia": {
+      "fundamentado": false,
+      "motivo": "nenhum valor verificavel citado (so limiares, ou nenhum R$ no texto)",
+      "valores_confirmados": [],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "005f7c8efd8024c8": {
+    "cliente_id": "CLI-006",
+    "parecer": {
+      "nivel_risco": "baixo",
+      "tipologia_suspeita": "Nenhum",
+      "red_flags": [],
+      "justificativa": "As flags determinísticas indicam ausência de fracionamento e valores atípicos. O histórico do cliente mostra apenas 10 operações em um período de quase três meses, com volume total de R$ 40.996,15 e valores médios dentro da faixa esperada. Não há indícios de comportamento suspeito ou padrões de lavagem de dinheiro."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-006"
+        }
+      }
+    ],
+    "tokens_total": 806,
+    "latencia_s": 5.66,
+    "cache_hit": false,
+    "hash_entrada": "005f7c8efd8024c8",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": false
+    },
+    "volume_total_brl": 40996.15,
+    "total_sinalizacoes_deterministicas": 0,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "1/1 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 40996.15,
+          "fonte": "volume_total_cliente"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "0877ce9c7f29641a": {
+    "cliente_id": "CLI-015",
+    "parecer": {
+      "nivel_risco": "baixo",
+      "tipologia_suspeita": "nenhuma",
+      "red_flags": [],
+      "justificativa": "O cliente apresentou apenas 9 operações no período analisado, com volume total de R$39.108 e valores médios dentro da faixa esperada. Não foram identificados flags de fracionamento ou valores atípicos, nem padrões incomuns de tipos de operação ou contrapartes. Não há indícios de comportamento suspeito, justificando a classificação de risco baixo."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-015"
+        }
+      }
+    ],
+    "tokens_total": 1860,
+    "latencia_s": 7.65,
+    "cache_hit": false,
+    "hash_entrada": "0877ce9c7f29641a",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": false
+    },
+    "volume_total_brl": 39107.97,
+    "total_sinalizacoes_deterministicas": 0,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "1/1 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 39108.0,
+          "fonte": "volume_total_cliente"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "82ec63ee12b22130": {
+    "cliente_id": "CLI-019",
+    "parecer": {
+      "nivel_risco": "baixo",
+      "tipologia_suspeita": "Nenhuma",
+      "red_flags": [],
+      "justificativa": "O cliente realizou 11 operações no período analisado, com volume total de R$38.421,48 e média de R$3.492,86, sem apresentar indicadores de fracionamento ou valores atípicos. Os tipos de operação e contrapartes são recorrentes e não indicam comportamento suspeito. Não há flags determinísticas nem datas específicas que justifiquem investigação adicional."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-019"
+        }
+      }
+    ],
+    "tokens_total": 764,
+    "latencia_s": 1.5,
+    "cache_hit": false,
+    "hash_entrada": "82ec63ee12b22130",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": false
+    },
+    "volume_total_brl": 38421.48,
+    "total_sinalizacoes_deterministicas": 0,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "2/2 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 38421.48,
+          "fonte": "volume_total_cliente"
+        },
+        {
+          "valor": 3492.86,
+          "fonte": "media_cliente"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "1dff4654a610d37c": {
+    "cliente_id": "CLI-025",
+    "parecer": {
+      "nivel_risco": "baixo",
+      "tipologia_suspeita": "nenhuma",
+      "red_flags": [],
+      "justificativa": "O cliente apresenta apenas 8 operações no período analisado, com volume total de R$33.793,99 e valores médios dentro da faixa esperada. Não há indicadores de fracionamento ou valores atípicos, nem concentração em contrapartes ou tipos de operação. As flags determinísticas estão todas negativas, indicando ausência de comportamento suspeito. Portanto, o risco é considerado baixo."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-025"
+        }
+      }
+    ],
+    "tokens_total": 1875,
+    "latencia_s": 1.45,
+    "cache_hit": false,
+    "hash_entrada": "1dff4654a610d37c",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": false
+    },
+    "volume_total_brl": 33793.99,
+    "total_sinalizacoes_deterministicas": 0,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "1/1 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 33793.99,
+          "fonte": "volume_total_cliente"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "2d69f69f402bb5f3": {
+    "cliente_id": "CLI-018",
+    "parecer": {
+      "nivel_risco": "baixo",
+      "tipologia_suspeita": "Nenhum",
+      "red_flags": [],
+      "justificativa": "O cliente apresenta volume e frequência de operações dentro dos padrões esperados, sem indicadores de fracionamento ou valores atípicos, conforme as flags determinísticas e o histórico resumido. Não há sinais de comportamento suspeito que justifiquem elevação do risco."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-018"
+        }
+      }
+    ],
+    "tokens_total": 1900,
+    "latencia_s": 6.74,
+    "cache_hit": false,
+    "hash_entrada": "2d69f69f402bb5f3",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": false
+    },
+    "volume_total_brl": 31302.74,
+    "total_sinalizacoes_deterministicas": 0,
+    "aderencia": {
+      "fundamentado": false,
+      "motivo": "nenhum valor verificavel citado (so limiares, ou nenhum R$ no texto)",
+      "valores_confirmados": [],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "0178dde4d5faec1e": {
+    "cliente_id": "CLI-027",
+    "parecer": {
+      "nivel_risco": "baixo",
+      "tipologia_suspeita": "nenhuma",
+      "red_flags": [],
+      "justificativa": "O cliente apresenta baixo volume de operações (9) e valor total moderado (R$ 29.113,81). Não há flags de fracionamento ou valores atípicos e a distribuição das transações (saques, transferências e pagamentos) está dentro do esperado. Não foram identificados indícios de comportamento suspeito."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-027"
+        }
+      }
+    ],
+    "tokens_total": 1877,
+    "latencia_s": 1.62,
+    "cache_hit": false,
+    "hash_entrada": "0178dde4d5faec1e",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": false
+    },
+    "volume_total_brl": 29113.81,
+    "total_sinalizacoes_deterministicas": 0,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "1/1 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 29113.81,
+          "fonte": "volume_total_cliente"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "fa8dc23982981cfd": {
+    "cliente_id": "CLI-004",
+    "parecer": {
+      "nivel_risco": "baixo",
+      "tipologia_suspeita": "Nenhuma",
+      "red_flags": [],
+      "justificativa": "O cliente realizou apenas 8 operações no período analisado, sem indicadores de fracionamento ou valores atípicos. O volume total e a média das transações estão dentro de padrões esperados para o perfil, e não há sinais de comportamento suspeito."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-004"
+        }
+      }
+    ],
+    "tokens_total": 1887,
+    "latencia_s": 1.55,
+    "cache_hit": false,
+    "hash_entrada": "fa8dc23982981cfd",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": false
+    },
+    "volume_total_brl": 25968.57,
+    "total_sinalizacoes_deterministicas": 0,
+    "aderencia": {
+      "fundamentado": false,
+      "motivo": "nenhum valor verificavel citado (so limiares, ou nenhum R$ no texto)",
+      "valores_confirmados": [],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "a0b9cd3a2a374d20": {
+    "cliente_id": "CLI-012",
+    "parecer": {
+      "nivel_risco": "baixo",
+      "tipologia_suspeita": "Nenhum",
+      "red_flags": [],
+      "justificativa": "O cliente apresenta volume e frequência de operações dentro da média esperada, sem indicadores de fracionamento ou valores atípicos nas flags determinísticas. Não há datas específicas de suspeita nem outras anomalias detectadas nos dados históricos."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-012"
+        }
+      }
+    ],
+    "tokens_total": 1825,
+    "latencia_s": 2.01,
+    "cache_hit": false,
+    "hash_entrada": "a0b9cd3a2a374d20"
   }
 }

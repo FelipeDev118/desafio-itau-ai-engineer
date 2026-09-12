@@ -1,92 +1,152 @@
 {
-  "chamadas_api": 19,
-  "clientes": 10,
-  "chamadas_por_cliente": 1.9,
-  "tokens_entrada": 14285,
-  "tokens_saida": 4961,
-  "tokens_total": 19246,
-  "custo_total_usd": 0.005119,
-  "custo_medio_por_cliente_usd": 0.000512,
-  "latencia_total_s": 22.51,
-  "latencia_media_por_chamada_s": 1.18,
-  "latencia_p95_s": 1.97,
-  "chamada_mais_cara_usd": 0.000451,
+  "chamadas_api": 31,
+  "clientes": 20,
+  "chamadas_por_cliente": 1.55,
+  "tokens_entrada": 22280,
+  "tokens_saida": 6131,
+  "tokens_total": 28411,
+  "custo_total_usd": 0.007021,
+  "custo_medio_por_cliente_usd": 0.000351,
+  "latencia_total_s": 43.44,
+  "latencia_media_por_chamada_s": 1.4,
+  "latencia_p95_s": 5.72,
+  "chamada_mais_cara_usd": 0.000446,
   "por_tipo_turno": {
     "decisao_ferramenta": {
-      "chamadas": 14,
-      "tokens_total": 12517,
-      "custo_usd": 0.003093,
-      "latencia_media_s": 0.860071
+      "chamadas": 23,
+      "tokens_total": 19362,
+      "custo_usd": 0.004622,
+      "latencia_media_s": 0.707391
     },
     "resposta_final": {
-      "chamadas": 5,
-      "tokens_total": 6729,
-      "custo_usd": 0.002026,
-      "latencia_media_s": 2.0946
+      "chamadas": 8,
+      "tokens_total": 9049,
+      "custo_usd": 0.002399,
+      "latencia_media_s": 3.396375
     }
   },
   "por_cliente": {
-    "CLI-001": {
+    "CLI-002": {
       "chamadas": 2,
-      "tokens_total": 1966,
-      "custo_usd": 0.000513,
-      "latencia_total_s": 1.64
+      "tokens_total": 1988,
+      "custo_usd": 0.000477,
+      "latencia_total_s": 1.697
     },
-    "CLI-005": {
+    "CLI-003": {
+      "chamadas": 2,
+      "tokens_total": 2155,
+      "custo_usd": 0.000576,
+      "latencia_total_s": 1.805
+    },
+    "CLI-004": {
+      "chamadas": 2,
+      "tokens_total": 1887,
+      "custo_usd": 0.000466,
+      "latencia_total_s": 1.541
+    },
+    "CLI-006": {
+      "chamadas": 1,
+      "tokens_total": 806,
+      "custo_usd": 0.000196,
+      "latencia_total_s": 0.64
+    },
+    "CLI-007": {
+      "chamadas": 1,
+      "tokens_total": 810,
+      "custo_usd": 0.000198,
+      "latencia_total_s": 0.69
+    },
+    "CLI-008": {
+      "chamadas": 1,
+      "tokens_total": 787,
+      "custo_usd": 0.000184,
+      "latencia_total_s": 0.642
+    },
+    "CLI-009": {
+      "chamadas": 2,
+      "tokens_total": 1906,
+      "custo_usd": 0.000477,
+      "latencia_total_s": 5.478
+    },
+    "CLI-010": {
+      "chamadas": 1,
+      "tokens_total": 744,
+      "custo_usd": 0.000158,
+      "latencia_total_s": 0.569
+    },
+    "CLI-011": {
       "chamadas": 1,
       "tokens_total": 786,
       "custo_usd": 0.000184,
-      "latencia_total_s": 0.638
+      "latencia_total_s": 0.624
     },
-    "CLI-013": {
+    "CLI-012": {
       "chamadas": 2,
-      "tokens_total": 1988,
-      "custo_usd": 0.000526,
-      "latencia_total_s": 1.806
+      "tokens_total": 1825,
+      "custo_usd": 0.000428,
+      "latencia_total_s": 2.001
     },
-    "CLI-014": {
+    "CLI-015": {
       "chamadas": 2,
-      "tokens_total": 2124,
-      "custo_usd": 0.000608,
-      "latencia_total_s": 2.096
+      "tokens_total": 1860,
+      "custo_usd": 0.00045,
+      "latencia_total_s": 7.637
     },
-    "CLI-017": {
-      "chamadas": 2,
-      "tokens_total": 1836,
-      "custo_usd": 0.000422,
-      "latencia_total_s": 1.274
-    },
-    "CLI-023": {
+    "CLI-016": {
       "chamadas": 1,
-      "tokens_total": 775,
-      "custo_usd": 0.000177,
-      "latencia_total_s": 1.589
+      "tokens_total": 780,
+      "custo_usd": 0.00018,
+      "latencia_total_s": 0.621
     },
-    "CLI-026": {
+    "CLI-018": {
       "chamadas": 2,
-      "tokens_total": 2028,
-      "custo_usd": 0.00055,
-      "latencia_total_s": 2.172
+      "tokens_total": 1900,
+      "custo_usd": 0.000473,
+      "latencia_total_s": 6.733
     },
-    "CLI-028": {
+    "CLI-019": {
+      "chamadas": 1,
+      "tokens_total": 764,
+      "custo_usd": 0.00017,
+      "latencia_total_s": 0.528
+    },
+    "CLI-020": {
+      "chamadas": 1,
+      "tokens_total": 781,
+      "custo_usd": 0.000181,
+      "latencia_total_s": 0.636
+    },
+    "CLI-021": {
+      "chamadas": 1,
+      "tokens_total": 828,
+      "custo_usd": 0.000209,
+      "latencia_total_s": 0.754
+    },
+    "CLI-022": {
       "chamadas": 2,
-      "tokens_total": 2036,
-      "custo_usd": 0.000555,
-      "latencia_total_s": 2.039
+      "tokens_total": 2158,
+      "custo_usd": 0.000626,
+      "latencia_total_s": 6.102
     },
-    "CLI-029": {
+    "CLI-024": {
       "chamadas": 2,
-      "tokens_total": 2274,
-      "custo_usd": 0.00065,
-      "latencia_total_s": 2.139
+      "tokens_total": 1894,
+      "custo_usd": 0.00047,
+      "latencia_total_s": 1.694
     },
-    "CLI-030": {
-      "chamadas": 3,
-      "tokens_total": 3433,
-      "custo_usd": 0.000934,
-      "latencia_total_s": 7.121
+    "CLI-025": {
+      "chamadas": 2,
+      "tokens_total": 1875,
+      "custo_usd": 0.000459,
+      "latencia_total_s": 1.436
+    },
+    "CLI-027": {
+      "chamadas": 2,
+      "tokens_total": 1877,
+      "custo_usd": 0.000459,
+      "latencia_total_s": 1.613
     }
   },
-  "projecao_30_clientes_usd": 0.015358,
-  "projecao_10k_clientes_usd": 5.12
+  "projecao_30_clientes_usd": 0.010531,
+  "projecao_10k_clientes_usd": 3.51
 }

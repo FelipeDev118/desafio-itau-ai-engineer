@@ -4,8 +4,10 @@ deterministicas apontariam para o mesmo cliente.
 Criterio de correspondencia (ver DECISOES.md para a justificativa completa):
 - fracionamento ativo, OU 2+ operacoes com valor atipico  -> regra espera "alto"
 - exatamente 1 sinalizacao de valor atipico, sem fracionamento -> regra espera "medio"
-(Não existe caso "nenhuma flag" aqui: só entram no confronto clientes que já foram
-sinalizados por pelo menos uma regra - ver ranking_clientes_sinalizados em dados.py.)
+- nenhuma sinalizacao -> regra espera "baixo"
+(O terceiro ramo so passou a ser exercido quando o lote passou a cobrir os 30 clientes
+da base, nao so os sinalizados - ver todos_os_clientes() em dados.py e DECISOES.md,
+"Cobrir os 30 clientes". Antes disso, literalmente nao existia caso "sem flag" aqui.)
 
 O criterio usa a INTENSIDADE da sinalizacao (quantas operacoes atipicas), e nao apenas
 "quantas regras distintas dispararam". Um criterio anterior - "ambas as flags -> alto" -
@@ -20,7 +22,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from dados import aplicar_regras, carregar_e_limpar, ranking_clientes_sinalizados
+from dados import aplicar_regras, carregar_e_limpar, todos_os_clientes
 
 OUTPUTS_DIR = Path(__file__).resolve().parent.parent / "outputs"
 
@@ -37,7 +39,9 @@ def _normalizar_nivel(nivel: str | None) -> str | None:
 def nivel_risco_esperado(flag_fracionamento: bool, qtd_atipicas: int) -> str:
     if flag_fracionamento or qtd_atipicas >= 2:
         return "alto"
-    return "médio"
+    if qtd_atipicas == 1:
+        return "médio"
+    return "baixo"
 
 
 def main():
@@ -47,7 +51,7 @@ def main():
     # qtd de operacoes atipicas por cliente vem das regras deterministicas, nao do parecer
     df, _ = carregar_e_limpar()
     df = aplicar_regras(df)
-    ranking = ranking_clientes_sinalizados(df, top_n=10).set_index("cliente_id")
+    ranking = todos_os_clientes(df).set_index("cliente_id")
 
     linhas = []
     for r in resultados:

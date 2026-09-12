@@ -1,10 +1,16 @@
-"""Parte C - executa o agente sobre os 10 clientes mais sinalizados e salva os
-resultados em outputs/, com analise de custo/latencia em pandas.
+"""Parte C - executa o agente sobre os clientes da base e salva os resultados em
+outputs/, com analise de custo/latencia em pandas.
 
 Nao faz parte da lista de arquivos obrigatorios do enunciado (tools.py, agente.py,
 confronto.py), mas o enunciado pede explicitamente a execucao em lote e o registro
 de custo/latencia (Parte C, itens 1-3) - colocamos aqui para nao inflar agente.py
 com logica de orquestracao de lote. Ver DECISOES.md.
+
+Por padrao cobre os 30 clientes da base, nao so os sinalizados pelas regras
+deterministicas - existe para medir o falso negativo que nenhuma metrica media antes:
+um cliente sem flag ainda seria marcado como risco pelo agente? (ver DECISOES.md,
+"Cobrir os 30 clientes"). Passe `todos=False` para voltar ao comportamento antigo
+(so os 10 mais sinalizados) - mais rapido, util para iterar em desenvolvimento.
 """
 import json
 import time
@@ -14,23 +20,29 @@ import pandas as pd
 
 from agente import rodar_agente
 from cache_parecer import CacheParecer
-from dados import aplicar_regras, carregar_e_limpar, montar_flags, ranking_clientes_sinalizados
+from dados import (
+    aplicar_regras,
+    carregar_e_limpar,
+    montar_flags,
+    ranking_clientes_sinalizados,
+    todos_os_clientes,
+)
 from observabilidade import Coletor
 from verificacao_aderencia import verificar
 
 OUTPUTS_DIR = Path(__file__).resolve().parent.parent / "outputs"
 
 
-def main(usar_cache: bool = True):
+def main(usar_cache: bool = True, todos: bool = True, top_n: int = 10):
     df, _ = carregar_e_limpar()
     df = aplicar_regras(df)
-    top10 = ranking_clientes_sinalizados(df, top_n=10)
+    clientes = todos_os_clientes(df) if todos else ranking_clientes_sinalizados(df, top_n=top_n)
 
     coletor = Coletor()
     cache = CacheParecer() if usar_cache else None
     cache_hits = 0
     resultados = []
-    for _, row in top10.iterrows():
+    for _, row in clientes.iterrows():
         cliente_id = row["cliente_id"]
         flags = montar_flags(df, row)
         resultado = rodar_agente(cliente_id, flags, coletor=coletor, cache=cache)

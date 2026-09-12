@@ -112,9 +112,12 @@ Critério final:
 |---|---|
 | `flag_fracionamento` ativa **ou** 2+ operações atípicas | `alto` |
 | exatamente 1 operação atípica, sem fracionamento | `médio` |
+| nenhuma sinalização | `baixo` |
 
 Fracionamento vai direto para "alto" porque é padrão **intencional** (structuring), não outlier
-estatístico.
+estatístico. O terceiro ramo (`baixo`) só passou a ser exercido quando o lote passou a cobrir os
+30 clientes da base, não só os sinalizados (ver "Cobrir os 30 clientes", abaixo) — até então,
+literalmente não existia caso "sem flag" no confronto.
 
 ### A métrica precisou ser desmembrada para não mentir
 
@@ -124,68 +127,77 @@ natureza diferente**: "o agente discordou da regra" e "o agente não produziu pa
 taxa pode significar tanto divergência de critério quanto instabilidade técnica, e são problemas
 com soluções opostas. `confronto.py` hoje reporta os dois separados:
 
-| Métrica | Execução atual (pós-correção do chute de data, ver seção 2) |
+| Métrica | Execução atual — 30 clientes (ver "Cobrir os 30 clientes") |
 |---|---|
-| Respostas válidas | **10/10** (0 esgotaram `max_turnos` — antes da correção: 7/10) |
-| Concordância entre as válidas | **40%** (4/10 — antes: 14%, 1/7) |
-| Divergências qualitativas | 6 |
+| Respostas válidas | **30/30** (0 esgotaram `max_turnos`) |
+| Concordância entre as válidas (30 clientes) | **77%** (23/30) |
+| Concordância só entre os 17 sinalizados | **59%** (10/17) |
+| Divergências qualitativas | 7 (todas entre os 17 sinalizados) |
 
-A subida de 14% para 40% é sobretudo efeito do denominador (7→10 respostas válidas), não prova
-de que o agente calibrou melhor: são 6 divergentes nas duas execuções, só que agora sobre uma base
-maior. Ver nota de não-determinismo abaixo — não comparar essas duas execuções como "antes/depois"
-controlado, o prompt mudou entre elas.
+Os dois números de concordância **não são a mesma pergunta**. Dos 23 concordantes, 13 são
+clientes sem nenhuma flag onde regra e agente concordam trivialmente em "baixo" — não há sinal
+nenhum para discordar sobre. A pergunta que importa (o critério de calibração alto/médio) só se
+coloca entre os 17 clientes sinalizados, onde a concordância real é 59% (10/17), mais perto da
+leitura anterior (40%, 4/10) do que o 77% agregado sugere. Reportar só o número agregado seria
+repetir o mesmo erro que motivou desmembrar "respostas válidas" de "concordância" no início desta
+seção: uma métrica que soma perguntas diferentes mede menos do que aparenta.
 
-### A divergência é sistemática, não aleatória — e essa é a informação
+### A divergência é predominantemente sistemática — mas não mais 100% unidirecional
 
-Os **6 divergentes vão todos na mesma direção**: a regra diz `alto`, o agente diz `médio`. Zero
-casos na direção oposta. Isso não é ruído, é **diferença de limiar**: meu critério dispara "alto"
-com um único sinal (fracionamento *ou* 2+ atípicas), enquanto o agente parece reservar "alto"
-para quando múltiplos fatores se reforçam. Nenhum dos dois é "a verdade" — são dois desenhos de
-threshold, e o fato de a discordância ser unidirecional é o dado interessante. Se fosse
-aleatória, apontaria para modelo instável; sendo sistemática, aponta para calibração.
+Dos 7 divergentes, **6 vão na mesma direção** de sempre: a regra diz `alto`, o agente diz `médio`
+(clientes com 2+ operações atípicas, sem fracionamento). Isso continua sendo diferença de limiar,
+não ruído: meu critério dispara "alto" com um único sinal (fracionamento *ou* 2+ atípicas),
+enquanto o agente parece reservar "alto" para quando múltiplos fatores se reforçam.
 
-Um caso didático da execução anterior (`CLI-029`) ilustra bem o padrão mesmo não sendo mais
-divergente nesta reexecução: o parecer **reconhecia explicitamente** o fracionamento
-("4 operações em 2026-05-26, totalizando R$ 71.297,68... indica possível tentativa de evitar
-reporte") e mesmo assim classificava como médio — não errava o fato, discordava da gravidade.
-Na execução atual esse mesmo cliente concorda com a regra (`alto`/`alto`) — outra confirmação de
-que a fronteira entre "médio" e "alto" não é estável no agente, é a mesma flag e o mesmo cliente
-mudando de lado entre rodadas.
+Mas cobrir mais clientes revelou o **primeiro caso na direção oposta**: `CLI-021` tem exatamente
+1 operação atípica (regra espera `médio`) e o agente respondeu `alto` — parecer bem fundamentado
+(todos os valores citados conferem), não um erro de leitura. Isso **revisa** a afirmação anterior
+("zero casos na direção oposta", quando a amostra era só os 10 clientes mais sinalizados) — com
+mais dados, "sistemática" vira "predominantemente sistemática, com pelo menos uma exceção", não
+"sempre". A lição de novo: uma amostra de 10 não sustenta "zero casos" da forma como uma de 17
+sustentaria; o texto tinha que ser corrigido, não só o número.
+
+Um caso didático de uma execução anterior (`CLI-029`, quando só os 10 mais sinalizados eram
+processados) ilustra a instabilidade da fronteira alto/médio: numa rodada o parecer **reconhecia
+explicitamente** o fracionamento e mesmo assim classificava como médio; na rodada seguinte,
+mesma flag, mesmo cliente, classificou como alto. A fronteira entre "médio" e "alto" não é estável
+no agente entre execuções — nem entre clientes com o mesmo perfil de sinalização.
 
 ### Mas a verificação de aderência mostrou que "discordar bem" não é a história toda
 
-Aqui as duas análises se cruzam. Numa primeira leitura, logo após corrigir o esgotamento de
-turnos, o resultado parecia pior do que antes: só 3 dos 10 pareceres válidos fundamentados,
-contra 4/7 (~57%) na execução anterior. Essa leitura **estava errada** — não porque o agente
-piorou, mas porque o próprio verificador tinha 3 bugs que inflavam falsos "não fundamentado"
-(ver seção abaixo, "O verificador de aderência tinha bugs próprios"). Corrigidos os bugs, o
-número real é **8/10 fundamentados** — melhor do que a execução anterior, não pior.
+Aqui as duas análises se cruzam. **28 dos 30 pareceres são fundamentados** — a versão final do
+verificador corrigido (ver "O verificador de aderência tinha bugs próprios", abaixo). Só 2 casos
+são falha real:
 
-Dos 2 casos que continuam não fundamentados, só 1 é um erro real do agente: `CLI-028` aponta como
-"único evento de valor atípico" uma operação de R$ 6.913,84, mas as operações que de fato carregam
-`flag_valor_atipico=True` para esse cliente são de R$ 27.715,48 e R$ 24.875,39 — mais que o dobro
-do valor citado. O outro (`CLI-001`) não é um erro de fundamentação, é a ausência dela: o parecer
-não cita nenhum valor em R$, só qualificadores vagos ("valores médios significativamente
-superiores ao mediano") — não há o que verificar, para o bem ou para o mal.
+- `CLI-028` aponta como "único evento de valor atípico" uma operação de R$ 6.913,84, mas as
+  operações que de fato carregam `flag_valor_atipico=True` para esse cliente são de R$ 27.715,48
+  e R$ 24.875,39 — mais que o dobro do valor citado. Alucinação real do agente.
+- `CLI-001` tem flag ativa e não cita nenhum valor em R$ na justificativa, só qualificadores
+  vagos — não é um número errado, é a ausência de qualquer número verificável quando deveria
+  haver um.
 
-**A conclusão honesta, revisada**: a divergência sistemática (regra `alto` → agente `médio`)
-continua real, e agora há evidência mais forte de que não é fruto de raciocínio mal fundamentado
-— 8 dos 10 pareceres partem de premissas corretas. Isso não prova que o critério do agente é
-"melhor" que o da regra (são dois desenhos de threshold, ver acima), mas derruba a hipótese mais
-fraca de que a divergência era apenas erro de leitura dos dados. E o episódio deixa uma lição
-maior que o número em si: a primeira medição pós-correção **também precisava ser auditada antes
-de virar afirmação** — quase escrevi "consertar o max_turnos piorou a aderência" com base num
-verificador que, ele mesmo, não tinha sido verificado.
+Os outros 6 "sem valor citado" (todos clientes sem nenhuma flag, classificados como `baixo`) não
+são falha nenhuma: a justificativa corretamente descreve ausência de anomalia
+("sem indicadores de fracionamento ou valores atípicos") sem precisar citar número nenhum — não
+há o que fundamentar quando não há alegação de risco. Contar isso como "não fundamentado" mediria
+menos do que aparenta, pelo mesmo motivo de sempre: confundir "não se aplica" com "falhou".
+
+**A conclusão honesta**: a divergência sistemática (regra `alto` → agente `médio`) continua real
+e majoritária, mas com 28/30 pareceres partindo de premissas corretas, ela não pode mais ser
+descartada como "raciocínio mal fundamentado" — é, de fato, um critério diferente de calibração,
+com uma exceção na direção oposta (`CLI-021`) que impede a leitura de "o agente é sempre mais
+conservador que a regra".
 
 ### Nota de não-determinismo
 
 Execuções anteriores deste mesmo confronto, com o **mesmo código e os mesmos dados**, deram
-**50%** e depois **30%** de concordância (ambas preservadas no histórico do git). Numa delas o
-parecer de `CLI-005` citava R$ 409,16 como a operação atípica — valor abaixo da mediana, portanto
-errado; noutra, citava as corretas. Isso significa que **este próprio documento estaria diferente**
-a cada reexecução, e foi o que motivou o cache por hash descrito adiante. Os números desta seção
-valem para as saídas commitadas em `outputs/`, que agora são estáveis justamente porque o parecer
-deixou de ser recalculado a cada rodada.
+**50%** e depois **30%** de concordância (ambas preservadas no histórico do git, sobre os 10
+clientes mais sinalizados da época). Numa delas o parecer de `CLI-005` citava R$ 409,16 como a
+operação atípica — valor abaixo da mediana, portanto errado; noutra, citava as corretas. Isso
+significa que **este próprio documento estaria diferente** a cada reexecução, e foi o que motivou
+o cache por hash descrito adiante. Os números desta seção valem para as saídas commitadas em
+`outputs/`, que agora são estáveis justamente porque o parecer deixou de ser recalculado a cada
+rodada.
 
 ## Nível 3: Trilha B (MCP)
 
@@ -423,11 +435,31 @@ nem bug, nem citação exata, é a mesma categoria dos qualificadores textuais q
 tratava ("superior a R$X"). Estendi `QUALIFICADORES` para reconhecer "entre" e propaguei o
 `e_limiar` do primeiro limite da faixa para o segundo.
 
-**Validação**: reaudita dos mesmos 10 pareceres (sem chamar a API de novo — só a lógica de
-grounding mudou) após cada correção: 3/10 → 5/10 (bug 1) → 6/10 (bug 3) → 8/10 (bug 2 + faixa).
-Testes de regressão para os 4 casos em `tests/test_verificacao_aderencia.py`. Dos 2 que continuam
-não fundamentados, 1 é erro real do agente (`CLI-028`) e 1 não tem valor citável nenhum
-(`CLI-001`, correto por definição, não um bug).
+Dois ajustes adicionais, descobertos ao cobrir os 30 clientes (mais clientes, mais formas de
+citação que os 10 originais não expunham):
+
+5. **Tolerância rígida demais para valor abreviado.** `CLI-007` citou agregados como `R$58.6k`
+   (o volume real, 58601.43, arredondado para 1 casa decimal de milhar) — a tolerância padrão
+   (R$0,50) rejeitava a citação correta só pelo arredondamento da abreviação. **Correção**:
+   tolerância maior (R$50, metade da menor unidade representada por uma casa decimal de milhar)
+   especificamente para valores com sufixo `k`; citação exata continua exigindo R$0,50.
+6. **"Sem valor citado" tratado como falha, mesmo quando não há nada para citar.** 6 dos 9
+   pareceres "não fundamentados" da primeira leitura sobre os 30 clientes eram de clientes **sem
+   nenhuma flag determinística**, corretamente classificados como `baixo` risco, descrevendo com
+   precisão a ausência de anomalia ("sem indicadores de fracionamento ou valores atípicos") — sem
+   nenhum número para citar, porque não há nada de anômalo a apontar. O verificador tratava
+   "nenhum valor citado" como falha sempre, independente de o cliente ter flag ou não.
+   **Correção**: `verificar()` agora confere se o cliente tem alguma flag real (fracionamento ou
+   valor atípico) antes de marcar ausência de citação como falha — sem flag, "nada a fundamentar"
+   é o resultado correto, não um "não fundamentado".
+
+**Validação**: reaudita dos mesmos pareceres (sem chamar a API de novo — só a lógica de grounding
+mudou) após cada correção, primeiro sobre os 10 clientes originais (3/10 → 5/10 → 6/10 → 8/10) e
+depois, já cobrindo os 30 clientes (ver "Cobrir os 30 clientes", abaixo), incorporando os bugs 5 e
+6: **28/30 fundamentados**. Testes de regressão para os 6 casos em
+`tests/test_verificacao_aderencia.py`. Dos 2 que continuam não fundamentados, 1 é erro real do
+agente (`CLI-028`) e 1 tem flag mas não cita nada (`CLI-001`) — os únicos dois que restam depois
+de seis correções no verificador, nenhuma delas artificial.
 
 ## Pressupostos das regras que dados reais violam
 
@@ -472,12 +504,43 @@ não existia antes disso. Rodar: `source .venv/bin/activate && python -m pytest 
 - ~~**Sem testes automatizados.**~~ Resolvido — ver acima.
 - **Acoplado a um provedor.** O tratamento do bug da "tool `JSON`" é específico do
   `gpt-oss` via Groq; trocar de provedor exige revisitar essa parte.
-- **Só os 10 mais sinalizados passam pelo agente**, por causa do rate limit; os outros 20
-  clientes não recebem parecer, e não há como saber se algum deveria ter sido pego.
+- ~~**Só os 10 mais sinalizados passam pelo agente.**~~ Resolvido — ver "Cobrir os 30 clientes",
+  abaixo.
 - ~~**`max_turnos=4` pode não bastar** / **agente inventa data quando não recebe uma.**~~
   Resolvido — ver "O agente chutava data em `operacoes_do_dia`..." acima: validado nos 3 clientes
-  que historicamente esgotavam turno e confirmado no lote completo re-executado (10/10 respostas
-  válidas).
+  que historicamente esgotavam turno e confirmado no lote completo re-executado, depois nos 30
+  clientes da base (30/30 respostas válidas).
+
+## Cobrir os 30 clientes — corrigido
+
+Antes, só os 10 clientes mais sinalizados recebiam parecer, por causa do rate limit — os outros
+20 (17 sinalizados fora do top 10, mais 13 sem nenhuma flag) não recebiam, e não havia como saber
+se algum deveria ter sido pego pelo agente mesmo sem flag determinística (o falso negativo que
+nenhuma métrica media).
+
+**Correção**: `nivel_2/dados.py` ganhou `todos_os_clientes()` (mesmas colunas de
+`ranking_clientes_sinalizados()`, mas para os 30 clientes, sem filtro nem `head()` — extraída de
+uma função privada comum, `_agregados_por_cliente()`, para não duplicar o cálculo).
+`nivel_2/lote.py` passou a iterar sobre ela por padrão (`todos=True`; `todos=False` volta ao
+comportamento antigo, útil para iterar rápido em desenvolvimento). `nivel_2/confronto.py` também
+passou a usar `todos_os_clientes()` para o lookup de sinalizações, e `nivel_risco_esperado()`
+ganhou um terceiro ramo (`baixo`, quando não há nenhuma sinalização) — antes disso, o critério
+literalmente não previa esse caso porque nunca havia sido exercido.
+
+**Resultado da execução real** (30 clientes, `~/outputs/pareceres_lote.json` atual): **30/30
+respostas válidas**, custo equivalente total US$ 0,007 (10 clientes vieram do cache, 20 novos
+custaram 31 chamadas de API). Análises completas em "Critério do confronto" e "Mas a verificação
+de aderência..." acima — resumo: concordância 77% no agregado, mas 59% entre os 17 sinalizados
+(os outros 13 concordam trivialmente em `baixo`, sem sinal nenhum para discordar); aderência
+28/30, com só 2 falhas reais. E a cobertura maior revisou uma afirmação anterior: a divergência
+não é mais 100% unidirecional (`CLI-021` diverge no sentido oposto ao dos outros 6).
+
+**O falso negativo que motivou isto**: nenhum dos 13 clientes sem flag determinística foi
+classificado como `alto` ou `médio` pelo agente — todos concordaram em `baixo`. Nesta base, não
+apareceu evidência de que a camada determinística esteja deixando passar um caso que o agente
+pegaria. Isso não prova que a Regra 1/Regra 2 sejam suficientes em geral (ver "Pressupostos das
+regras que dados reais violam", abaixo) — só que, nestes 30 clientes específicos, o agente não
+discordou da ausência de sinal.
 
 ---
 
@@ -517,9 +580,3 @@ por isso conviveria com a original em vez de substituí-la, para não invalidar 
 verificável por assert) e o delta tem que ser inspecionado à mão — janela maior gera mais falso
 positivo, e o número só é aceitável se for revisável pela mesa.
 
-## Cobrir os 30 clientes
-
-Hoje só os 10 mais sinalizados recebem parecer, por rate limit. Com o cache por hash acima, mais
-processamento em fila respeitando o TPM, o lote completo roda — inclusive para reavaliar se
-clientes **não** sinalizados pelas regras teriam sido pegos pelo agente, que é o falso negativo
-que nenhuma métrica atual mede.
