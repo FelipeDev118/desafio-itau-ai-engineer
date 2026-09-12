@@ -342,10 +342,22 @@ O parecer de `CLI-028` veio com 4 caracteres Unicode invisíveis (U+200B) no mei
 justificativa, truncando a frase visualmente. O JSON era válido e passou pelo Pydantic. Validação
 estrutural não substitui sanitização de texto.
 
+## Testes automatizados das regras — corrigido
+
+`tests/` (pytest): 23 testes cobrindo os limites onde regra de negócio quebra — operação de
+exatamente R$ 20.000,00, soma de exatamente R$ 50.000,00, cliente com exatamente 3 e exatamente 4
+operações, cliente com todas as datas nulas, valor exatamente no limite de atipicidade (mediana ×
+5). Mais 4 testes de integração do agente com o cliente Groq mockado (`tests/test_agente.py`):
+tool-call seguido de parecer válido, cache de parecer (segunda chamada não bate na API), esgotar
+`max_turnos` sem resposta final, e parecer fora do schema Pydantic. Roda sem rede nem rate limit —
+`python -m pytest` leva ~1,5s.
+
+Cada teste de limite falharia se alguém trocasse `>` por `>=` (ou vice-versa) nas regras — o que
+não existia antes disso. Rodar: `source .venv/bin/activate && python -m pytest -v`.
+
 ## Outras
 
-- **Sem testes automatizados.** O que existe são `assert`s no notebook e inspeção manual — não
-  uma suíte. Para código que decide encaminhar cliente a análise humana, isso é pouco.
+- ~~**Sem testes automatizados.**~~ Resolvido — ver acima.
 - **Acoplado a um provedor.** O tratamento do bug da "tool `JSON`" é específico do
   `gpt-oss` via Groq; trocar de provedor exige revisitar essa parte.
 - **Só os 10 mais sinalizados passam pelo agente**, por causa do rate limit; os outros 20
@@ -387,16 +399,6 @@ faz, aceitável para 30 clientes, não para volume real de um banco).
 **Como validaria**: alterar um único valor da base de um cliente já cacheado, rodar de novo, e
 confirmar duas coisas — o hash muda (então o parecer antigo não é reaproveitado por engano) e o
 registro antigo continua consultável por quem precisar da decisão histórica.
-
-## Testes automatizados das regras
-
-**Arquitetura**: `pytest` sobre os limites, que é onde regra de negócio quebra — operação de
-exatamente R$ 20.000,00, soma de exatamente R$ 50.000,00, cliente com exatamente 4 operações,
-cliente com data nula em todas. Mais um teste do agente com o cliente Groq mockado, para rodar
-sem rede nem rate limit.
-
-**Como validaria**: os casos-limite são construídos à mão com resultado esperado conhecido — o
-teste falha se alguém mudar `>` para `>=`. Hoje nada me protege disso.
 
 ## Regra 1 com janela deslizante
 
