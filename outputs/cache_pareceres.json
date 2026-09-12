@@ -844,5 +844,515 @@
     "latencia_s": 18.25,
     "cache_hit": false,
     "hash_entrada": "adbf184447458a31"
+  },
+  "64c76bc696e6d9b4": {
+    "cliente_id": "CLI-014",
+    "parecer": {
+      "nivel_risco": "medio",
+      "tipologia_suspeita": "Transações de alto valor sem justificativa",
+      "red_flags": [
+        "flag_valor_atipico",
+        "valor_medio_brl significativamente acima do valor_mediano",
+        "volume_total elevado em poucas operações"
+      ],
+      "justificativa": "O cliente realizou 11 operações totalizando R$ 80.629,99, com valor médio de R$ 7.330,00 e valor mediano de R$ 2.308,41, indicando presença de transações de valor atípico. Não há indícios de fracionamento, mas o desbalanceamento entre média e mediana, aliado ao volume total elevado, caracteriza risco de movimentação de recursos sem justificativa clara."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-014"
+        }
+      }
+    ],
+    "tokens_total": 2124,
+    "latencia_s": 2.12,
+    "cache_hit": false,
+    "hash_entrada": "64c76bc696e6d9b4",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": true
+    },
+    "volume_total_brl": 80629.99,
+    "total_sinalizacoes_deterministicas": 3,
+    "aderencia": {
+      "fundamentado": false,
+      "motivo": "valores citados como atipicos que NAO tem flag_valor_atipico: [2308.41] - o numero existe na base, mas o parecer o usa no contexto errado",
+      "valores_confirmados": [
+        {
+          "valor": 80629.99,
+          "fonte": "volume_total_cliente"
+        },
+        {
+          "valor": 7330.0,
+          "fonte": "media_cliente"
+        },
+        {
+          "valor": 2308.41,
+          "fonte": "operacao OP-00127"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": [
+        {
+          "valor": 2308.41,
+          "fonte": "operacao OP-00127"
+        }
+      ]
+    }
+  },
+  "15bb1e1c991ac7b0": {
+    "cliente_id": "CLI-023",
+    "parecer": {
+      "nivel_risco": "medio",
+      "tipologia_suspeita": "Transacoes de alto valor atipico",
+      "red_flags": [
+        "Valor atipico detectado",
+        "Media de operacoes muito superior a mediana",
+        "Concentracao de volume em poucas operacoes"
+      ],
+      "justificativa": "O cliente apresenta 12 operacoes com volume total de R$148.535,02. A media (R$12.377,92) e muito superior à mediana (R$3.241,16), indicando a presenca de transacoes de valor muito alto. A flag deterministica de valor atipico foi ativada, embora nao haja indicios de fracionamento. Esse padrao sugere risco medio de lavagem de dinheiro, requerendo monitoramento adicional."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-023"
+        }
+      }
+    ],
+    "tokens_total": 775,
+    "latencia_s": 4.69,
+    "cache_hit": false,
+    "hash_entrada": "15bb1e1c991ac7b0",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": true
+    },
+    "volume_total_brl": 148535.02,
+    "total_sinalizacoes_deterministicas": 2,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "3/3 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 148535.02,
+          "fonte": "volume_total_cliente"
+        },
+        {
+          "valor": 12377.92,
+          "fonte": "media_cliente"
+        },
+        {
+          "valor": 3241.16,
+          "fonte": "mediana_cliente"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "838eea4562a3c37f": {
+    "cliente_id": "CLI-028",
+    "parecer": {
+      "nivel_risco": "medio",
+      "tipologia_suspeita": "Valor atípico em transferência enviada",
+      "red_flags": [
+        "flag_valor_atipico"
+      ],
+      "justificativa": "O cliente apresenta um volume de operações moderado (12) com valor médio de R$7.395,9. Foi identificado um único evento de valor atípico (R$6.913,84) em transferência enviada via cartão, que disparou a flag de valor atípico. Não há indícios de fracionamento nem de padrões de uso de canais suspeitos. Dada a presença da flag de valor atípico sem outros sinais de risco elevado, o caso é classificado como risco médio."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-028"
+        }
+      },
+      {
+        "tool": "operacoes_do_dia",
+        "args": {
+          "cliente_id": "CLI-028",
+          "data": "2026-05-23"
+        }
+      }
+    ],
+    "tokens_total": 2036,
+    "latencia_s": 3.19,
+    "cache_hit": false,
+    "hash_entrada": "838eea4562a3c37f",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": true
+    },
+    "volume_total_brl": 88750.8,
+    "total_sinalizacoes_deterministicas": 2,
+    "aderencia": {
+      "fundamentado": false,
+      "motivo": "valores citados como atipicos que NAO tem flag_valor_atipico: [6913.84] - o numero existe na base, mas o parecer o usa no contexto errado",
+      "valores_confirmados": [
+        {
+          "valor": 7395.9,
+          "fonte": "media_cliente"
+        },
+        {
+          "valor": 6913.84,
+          "fonte": "operacao OP-00269"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": [
+        {
+          "valor": 6913.84,
+          "fonte": "operacao OP-00269"
+        }
+      ]
+    }
+  },
+  "ef5dbac48efdb780": {
+    "cliente_id": "CLI-013",
+    "parecer": {
+      "nivel_risco": "medio",
+      "tipologia_suspeita": "Transacoes de valor atipico",
+      "red_flags": [
+        "valor_atipico"
+      ],
+      "justificativa": "O cliente apresenta flag de valor atípico e um volume total de R$81.730,99 em apenas 10 operacoes, com valor medio de R$8.173,10 muito acima do valor mediano de R$3.146,22, indicando possivel concentracao de recursos em operacoes fora do padrao historico."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-013"
+        }
+      }
+    ],
+    "tokens_total": 1988,
+    "latencia_s": 1.84,
+    "cache_hit": false,
+    "hash_entrada": "ef5dbac48efdb780",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": true
+    },
+    "volume_total_brl": 81730.99,
+    "total_sinalizacoes_deterministicas": 2,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "3/3 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 81730.99,
+          "fonte": "volume_total_cliente"
+        },
+        {
+          "valor": 8173.1,
+          "fonte": "media_cliente"
+        },
+        {
+          "valor": 3146.22,
+          "fonte": "mediana_cliente"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "2b9cdba404b16696": {
+    "cliente_id": "CLI-005",
+    "parecer": {
+      "nivel_risco": "medio",
+      "tipologia_suspeita": "Transação de valor atípico",
+      "red_flags": [
+        "valor_atipico",
+        "desvio_entre_media_e_mediana",
+        "contraparte_comercial_frequente"
+      ],
+      "justificativa": "O cliente realizou 11 operações com volume total de R$64.742,66, apresentando valor médio de R$5.885,70 e mediano de R$2.144,18, indicando presença de transação(s) de valor significativamente acima do padrão. A flag de valor atípico está ativada e não há indícios de fracionamento. A combinação de alto valor médio, desvio em relação à mediana e contrapartes comerciais recorrentes sugere risco médio de lavagem de dinheiro."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-005"
+        }
+      }
+    ],
+    "tokens_total": 786,
+    "latencia_s": 2.02,
+    "cache_hit": false,
+    "hash_entrada": "2b9cdba404b16696",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": true
+    },
+    "volume_total_brl": 64742.66,
+    "total_sinalizacoes_deterministicas": 2,
+    "aderencia": {
+      "fundamentado": false,
+      "motivo": "valores citados como atipicos que NAO tem flag_valor_atipico: [2144.18] - o numero existe na base, mas o parecer o usa no contexto errado",
+      "valores_confirmados": [
+        {
+          "valor": 64742.66,
+          "fonte": "volume_total_cliente"
+        },
+        {
+          "valor": 5885.7,
+          "fonte": "media_cliente"
+        },
+        {
+          "valor": 2144.18,
+          "fonte": "operacao OP-00046"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": [
+        {
+          "valor": 2144.18,
+          "fonte": "operacao OP-00046"
+        }
+      ]
+    }
+  },
+  "d939f310a20637f6": {
+    "cliente_id": "CLI-026",
+    "parecer": {
+      "nivel_risco": "medio",
+      "tipologia_suspeita": "Valor atípico em transações",
+      "red_flags": [
+        "valor atípico"
+      ],
+      "justificativa": "O cliente apresenta flag de valor atípico, indicando operações com valores fora do padrão histórico. O valor médio (R$ 4.560,77) está significativamente acima do valor mediano (R$ 2.032,93), sugerindo possíveis transações de valor elevado que podem caracterizar tentativa de lavagem de dinheiro. Não há indícios de fracionamento, mas o comportamento de valores anômalos justifica um risco médio e recomenda monitoramento adicional."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-026"
+        }
+      }
+    ],
+    "tokens_total": 2028,
+    "latencia_s": 2.21,
+    "cache_hit": false,
+    "hash_entrada": "d939f310a20637f6",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": true
+    },
+    "volume_total_brl": 54729.28,
+    "total_sinalizacoes_deterministicas": 2,
+    "aderencia": {
+      "fundamentado": true,
+      "motivo": "2/2 valores citados conferem",
+      "valores_confirmados": [
+        {
+          "valor": 4560.77,
+          "fonte": "media_cliente"
+        },
+        {
+          "valor": 2032.93,
+          "fonte": "mediana_cliente"
+        }
+      ],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "91fc11158949270b": {
+    "cliente_id": "CLI-001",
+    "parecer": {
+      "nivel_risco": "alto",
+      "tipologia_suspeita": "Operações de valor atípico em espécie e TED",
+      "red_flags": [
+        "Flag de valor atípico ativada",
+        "Valor médio (R$ 4.794,78) muito acima do valor mediano (R$ 1.609,15)",
+        "Concentração de volume em espécie (R$ 25.110,15) representando mais de 50% do total",
+        "Elevado volume em TED (R$ 18.175,88) sem justificativa aparente"
+      ],
+      "justificativa": "O cliente apresenta um padrão de transações com valores médios significativamente superiores ao mediano, indicando a presença de operações de alto valor que distorcem a média. Além disso, há uma forte concentração de volume em espécie e em transferências TED, canais frequentemente associados a risco de lavagem de dinheiro. A flag de valor atípico está ativada, reforçando a necessidade de monitoramento intensivo."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-001"
+        }
+      },
+      {
+        "tool": "perfil_canal",
+        "args": {
+          "cliente_id": "CLI-001"
+        }
+      }
+    ],
+    "tokens_total": 1966,
+    "latencia_s": 3.02,
+    "cache_hit": false,
+    "hash_entrada": "91fc11158949270b",
+    "flags_deterministicas": {
+      "flag_fracionamento": false,
+      "flag_valor_atipico": true
+    },
+    "volume_total_brl": 47947.81,
+    "total_sinalizacoes_deterministicas": 2,
+    "aderencia": {
+      "fundamentado": false,
+      "motivo": "nenhum valor verificavel citado (so limiares, ou nenhum R$ no texto)",
+      "valores_confirmados": [],
+      "valores_nao_encontrados": [],
+      "atipicos_incorretos": []
+    }
+  },
+  "ac8d7460b297a103": {
+    "cliente_id": "CLI-029",
+    "parecer": {
+      "nivel_risco": "alto",
+      "tipologia_suspeita": "Fracionamento de valores (smurfing)",
+      "red_flags": [
+        "Fracionamento de valores em um único dia",
+        "Operações de alto valor em múltiplos canais (TED e PIX)",
+        "Contrapartes diversas sem justificativa clara"
+      ],
+      "justificativa": "No dia 2026-05-26 o cliente realizou quatro operações de valores elevados (entre R$14.3k e R$19.4k), totalizando R$71,297.68, distribuídas entre saque, depósito e transferência recebida, usando tanto TED quanto PIX. A presença da flag de fracionamento e a semelhança dos valores indicam tentativa de dividir montantes para evitar detecção, configurando risco alto de lavagem de dinheiro."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "operacoes_do_dia",
+        "args": {
+          "cliente_id": "CLI-029",
+          "data": "2026-05-26"
+        }
+      }
+    ],
+    "tokens_total": 2274,
+    "latencia_s": 2.17,
+    "cache_hit": false,
+    "hash_entrada": "ac8d7460b297a103",
+    "flags_deterministicas": {
+      "flag_fracionamento": true,
+      "flag_valor_atipico": false,
+      "datas_fracionamento": [
+        "2026-05-26"
+      ]
+    },
+    "volume_total_brl": 191385.77,
+    "total_sinalizacoes_deterministicas": 1,
+    "aderencia": {
+      "fundamentado": false,
+      "motivo": "3/3 valores citados nao correspondem a nenhuma operacao, soma diaria ou agregado do cliente",
+      "valores_confirmados": [],
+      "valores_nao_encontrados": [
+        14.0,
+        19.0,
+        71.29
+      ],
+      "atipicos_incorretos": []
+    }
+  },
+  "755d0c760a6b4204": {
+    "cliente_id": "CLI-017",
+    "parecer": {
+      "nivel_risco": "alto",
+      "tipologia_suspeita": "Fracionamento de valores (structuring)",
+      "red_flags": [
+        "flag_fracionamento",
+        "múltiplas operações de alto valor em um mesmo dia",
+        "uso de diferentes canais (TED e PIX)",
+        "contrapartes diversas",
+        "volume diário elevado próximo ao limite de reporte"
+      ],
+      "justificativa": "O cliente apresenta flag de fracionamento e, no dia 2026-03-08, realizou quatro operações de valores elevados (entre R$14.3k e R$18.7k), totalizando R$64,673.88, distribuídas entre TED e PIX e envolvendo diferentes contrapartes. Essa prática de dividir grandes montantes em várias transações menores, combinada com a diversidade de canais e contrapartes, indica tentativa de evitar detecção, caracterizando risco alto de structuring."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-017"
+        }
+      },
+      {
+        "tool": "operacoes_do_dia",
+        "args": {
+          "cliente_id": "CLI-017",
+          "data": "2026-03-08"
+        }
+      }
+    ],
+    "tokens_total": 1836,
+    "latencia_s": 3.0,
+    "cache_hit": false,
+    "hash_entrada": "755d0c760a6b4204",
+    "flags_deterministicas": {
+      "flag_fracionamento": true,
+      "flag_valor_atipico": false,
+      "datas_fracionamento": [
+        "2026-03-08"
+      ]
+    },
+    "volume_total_brl": 121391.37,
+    "total_sinalizacoes_deterministicas": 1,
+    "aderencia": {
+      "fundamentado": false,
+      "motivo": "3/3 valores citados nao correspondem a nenhuma operacao, soma diaria ou agregado do cliente",
+      "valores_confirmados": [],
+      "valores_nao_encontrados": [
+        14.0,
+        18.0,
+        64.67
+      ],
+      "atipicos_incorretos": []
+    }
+  },
+  "8d6f7fa4ad1035ba": {
+    "cliente_id": "CLI-030",
+    "parecer": {
+      "nivel_risco": "medio",
+      "tipologia_suspeita": "Transferência de alto valor incomum (TED)",
+      "red_flags": [
+        "valor_atípico_detectado",
+        "concentração_de_volume_em_TED",
+        "discrepância_entre_canal_predominante_pix_e_grandes_TED"
+      ],
+      "justificativa": "O cliente apresenta flag de valor atípico. Embora o volume total seja distribuído entre vários canais, 85.546,51 BRL (73% do total) está concentrado em apenas duas operações TED, muito acima da média de 13.086,77 BRL e da mediana de 4.611,07 BRL. Não há indícios de fracionamento, mas a presença de grandes TED em um perfil onde o canal predominante é PIX indica comportamento incomum que justifica monitoramento adicional."
+    },
+    "erro_parsing": null,
+    "texto_bruto": null,
+    "tools_chamadas": [
+      {
+        "tool": "historico_cliente",
+        "args": {
+          "cliente_id": "CLI-030"
+        }
+      },
+      {
+        "tool": "perfil_canal",
+        "args": {
+          "cliente_id": "CLI-030"
+        }
+      }
+    ],
+    "tokens_total": 3433,
+    "latencia_s": 7.22,
+    "cache_hit": false,
+    "hash_entrada": "8d6f7fa4ad1035ba"
   }
 }

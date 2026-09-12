@@ -26,7 +26,7 @@ from pathlib import Path
 
 CACHE_PATH = Path(__file__).resolve().parent.parent / "outputs" / "cache_pareceres.json"
 
-VERSAO_PROMPT = "v2-2026-08-25"  # bump: SYSTEM_PROMPT passou a instruir uso de datas_fracionamento
+VERSAO_PROMPT = "v3-2026-09-12"  # bump: SYSTEM_PROMPT passou a proibir data chutada em operacoes_do_dia
 
 
 def calcular_hash(cliente_id: str, flags: dict, dados_cliente: dict, modelo: str) -> str:

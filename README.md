@@ -110,34 +110,42 @@ observabilidade de custo). Nenhum arquivo obrigatório foi renomeado, movido ou 
 - O modelo tenta, ocasionalmente, chamar uma **ferramenta fictícia chamada `JSON`** para devolver
   a resposta final, o que a API rejeita; o parecer válido vem dentro do corpo do erro e é
   recuperado de lá (`nivel_2/agente.py`).
-- O agente **decide** quais ferramentas usar (3 padrões distintos entre os 10 clientes). A
-  auditoria das saídas revelou um **defeito de desenho do prompt**: clientes com flag de
-  fracionamento não consultavam o recorte diário, porque o prompt informava *que* a flag estava
-  ativa sem informar *em qual data*. **Corrigido** (`nivel_2/dados.py`, `datas_fracionamento` +
-  `montar_flags`): os clientes com fracionamento no top 10 passaram a chamar `operacoes_do_dia`
-  exatamente na data sinalizada pela Regra 1. Análise completa, incluindo um efeito colateral
-  descoberto na correção, em
+- O agente **decide** quais ferramentas usar. A auditoria das saídas revelou dois **defeitos de
+  desenho do prompt**, ambos corrigidos:
+  - Clientes com flag de fracionamento não consultavam o recorte diário, porque o prompt
+    informava *que* a flag estava ativa sem informar *em qual data* (`nivel_2/dados.py`,
+    `datas_fracionamento` + `montar_flags`).
+  - Clientes **sem** flag de fracionamento (só valor atípico) faziam o agente "pescar"
+    `operacoes_do_dia` com datas chutadas, sem grounding — consumindo os 4 turnos disponíveis sem
+    sobrar um para a resposta final. 3 dos 10 clientes do top 10 esgotavam `max_turnos` por causa
+    disso. Corrigido deixando explícito no prompt que a ferramenta só deve ser chamada com uma
+    data fornecida ou já observada — nunca inventada — e que não investigar por falta de pista é
+    uma decisão válida. Resultado após a correção: **10/10 respostas válidas** (era 7/10).
+  Análise completa de ambos, incluindo efeitos colaterais descobertos em cada correção, em
   [`docs/DECISOES.md`](docs/DECISOES.md#o-agente-não-usava-operacoes_do_dia-nos-casos-de-fracionamento--corrigido).
-- A **concordância entre regra e agente variou entre execuções** (50%, depois 30%, com o mesmo
-  código e os mesmos dados) — essa instabilidade em si é um achado central. Na execução
-  commitada, as **6 divergências apontam todas na mesma direção** (regra `alto` → agente
+- A **concordância entre regra e agente variou entre execuções** (50%, depois 30%, depois 40%,
+  com código equivalente e os mesmos dados) — essa instabilidade em si é um achado central. Na
+  execução commitada, as **6 divergências apontam todas na mesma direção** (regra `alto` → agente
   `médio`): diferença sistemática de limiar, não ruído. Mas a verificação de aderência qualifica
-  essa leitura — em 3 dos 7 pareceres o raciocínio partiu da operação errada, então não dá para
-  chamar a divergência de "julgamento melhor". Análise em
+  essa leitura — na maioria dos pareceres válidos (7 de 10) o raciocínio partiu da operação
+  errada, então não dá para chamar a divergência de "julgamento melhor". Análise em
   [`docs/DECISOES.md`](docs/DECISOES.md#critério-do-confronto-intensidade-não-coincidência-de-regras).
 - **Cache por hash de entrada** (`nivel_2/cache_parecer.py`) resolve essa instabilidade *entre
   reexecuções do pipeline*: parecer já gerado é reaproveitado em vez de recalculado. Provado, não
   só afirmado — rodar `lote.py` a 3ª vez levou 1,3s com **0 chamadas de API** (a 1ª levou 3min47),
-  e `confronto.py` passou a dar o mesmo número em execuções seguidas.
+  e `confronto.py` passou a dar o mesmo número em execuções seguidas. O hash inclui a versão do
+  prompt, então mudar o `SYSTEM_PROMPT` (como nas duas correções acima) invalida o cache de
+  propósito, em vez de reaproveitar parecer gerado com instrução antiga.
 - A métrica de concordância também estava **enganosa por omissão**: misturava "o agente
-  discordou" com "o agente não respondeu" (turnos excedidos, comuns quando ele chuta uma data
-  sem grounding). `confronto.py` agora separa `respostas_validas` de
-  `taxa_concordancia_entre_validas` — a taxa de resposta válida virou um número auditável por si
-  só, não escondido dentro da concordância.
+  discordou" com "o agente não respondeu" (turnos excedidos). `confronto.py` separa
+  `respostas_validas` de `taxa_concordancia_entre_validas` — a taxa de resposta válida virou um
+  número auditável por si só, não escondido dentro da concordância.
 - **O achado mais forte de todos**: uma verificação de aderência sem LLM
   (`nivel_2/verificacao_aderencia.py`) confere se os valores citados na justificativa existem de
-  fato na base do cliente — e revelou que **3 dos 7 pareceres válidos estavam fundamentados na
-  operação errada**. `CLI-013` chamou de "atípica" uma operação de R$ 312,54, a *menor* da base
-  daquele cliente, quando as realmente sinalizadas eram de R$ 28.487,76 e R$ 26.754,23. Nenhum
+  fato na base do cliente — e revelou que **apenas 3 dos 10 pareceres válidos estão fundamentados
+  na operação certa** (era 4/7 ≈ 57% antes de corrigir o esgotamento de turnos — a proporção
+  piorou, não melhorou, porque os dois problemas são independentes). `CLI-028` chamou de "único
+  evento de valor atípico" uma operação de R$ 6.913,84, quando as duas operações que de fato têm
+  a flag ativa para esse cliente são de R$ 27.715,48 e R$ 24.875,39 — mais que o dobro. Nenhum
   desses erros é perceptível lendo o texto — todos soam plausíveis. Resultado em
   [`outputs/aderencia_pareceres.csv`](outputs/aderencia_pareceres.csv).

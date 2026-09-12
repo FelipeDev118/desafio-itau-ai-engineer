@@ -1,11 +1,11 @@
 cliente_id,fundamentado,motivo,valores_confirmados,valores_nao_encontrados,atipicos_incorretos
-CLI-014,False,"valores citados como atipicos que NAO tem flag_valor_atipico: [9157.8] - o numero existe na base, mas o parecer o usa no contexto errado","[{'valor': 80629.99, 'fonte': 'volume_total_cliente'}, {'valor': 7330.0, 'fonte': 'media_cliente'}, {'valor': 2308.41, 'fonte': 'operacao OP-00127'}, {'valor': 9157.8, 'fonte': 'operacao OP-00132'}]",[],"[{'valor': 9157.8, 'fonte': 'operacao OP-00132'}]"
-CLI-023,False,sem parecer para verificar,,,
-CLI-028,True,4/4 valores citados conferem,"[{'valor': 88750.8, 'fonte': 'volume_total_cliente'}, {'valor': 7395.9, 'fonte': 'media_cliente'}, {'valor': 6913.84, 'fonte': 'operacao OP-00269'}, {'valor': 4430.25, 'fonte': 'mediana_cliente'}]",[],[]
-CLI-013,False,"valores citados como atipicos que NAO tem flag_valor_atipico: [312.54] - o numero existe na base, mas o parecer o usa no contexto errado","[{'valor': 8173.1, 'fonte': 'media_cliente'}, {'valor': 312.54, 'fonte': 'operacao OP-00123'}]",[],"[{'valor': 312.54, 'fonte': 'operacao OP-00123'}]"
-CLI-005,False,sem parecer para verificar,,,
-CLI-026,True,1/1 valores citados conferem,"[{'valor': 21261.01, 'fonte': 'operacao OP-00253'}]",[],[]
-CLI-001,False,"valores citados como atipicos que NAO tem flag_valor_atipico: [5016.62] - o numero existe na base, mas o parecer o usa no contexto errado","[{'valor': 5016.62, 'fonte': 'operacao OP-00007'}, {'valor': 1609.15, 'fonte': 'mediana_cliente'}]",[],"[{'valor': 5016.62, 'fonte': 'operacao OP-00007'}]"
-CLI-029,True,1/1 valores citados conferem,"[{'valor': 71297.68, 'fonte': 'soma_do_dia_2026-05-26'}]",[],[]
-CLI-017,True,1/1 valores citados conferem,"[{'valor': 64673.88, 'fonte': 'soma_do_dia_2026-03-08'}]",[],[]
-CLI-030,False,sem parecer para verificar,,,
+CLI-014,False,"valores citados como atipicos que NAO tem flag_valor_atipico: [2308.41] - o numero existe na base, mas o parecer o usa no contexto errado","[{'valor': 80629.99, 'fonte': 'volume_total_cliente'}, {'valor': 7330.0, 'fonte': 'media_cliente'}, {'valor': 2308.41, 'fonte': 'operacao OP-00127'}]",[],"[{'valor': 2308.41, 'fonte': 'operacao OP-00127'}]"
+CLI-023,True,3/3 valores citados conferem,"[{'valor': 148535.02, 'fonte': 'volume_total_cliente'}, {'valor': 12377.92, 'fonte': 'media_cliente'}, {'valor': 3241.16, 'fonte': 'mediana_cliente'}]",[],[]
+CLI-028,False,"valores citados como atipicos que NAO tem flag_valor_atipico: [6913.84] - o numero existe na base, mas o parecer o usa no contexto errado","[{'valor': 7395.9, 'fonte': 'media_cliente'}, {'valor': 6913.84, 'fonte': 'operacao OP-00269'}]",[],"[{'valor': 6913.84, 'fonte': 'operacao OP-00269'}]"
+CLI-013,True,3/3 valores citados conferem,"[{'valor': 81730.99, 'fonte': 'volume_total_cliente'}, {'valor': 8173.1, 'fonte': 'media_cliente'}, {'valor': 3146.22, 'fonte': 'mediana_cliente'}]",[],[]
+CLI-005,False,"valores citados como atipicos que NAO tem flag_valor_atipico: [2144.18] - o numero existe na base, mas o parecer o usa no contexto errado","[{'valor': 64742.66, 'fonte': 'volume_total_cliente'}, {'valor': 5885.7, 'fonte': 'media_cliente'}, {'valor': 2144.18, 'fonte': 'operacao OP-00046'}]",[],"[{'valor': 2144.18, 'fonte': 'operacao OP-00046'}]"
+CLI-026,True,2/2 valores citados conferem,"[{'valor': 4560.77, 'fonte': 'media_cliente'}, {'valor': 2032.93, 'fonte': 'mediana_cliente'}]",[],[]
+CLI-001,False,"nenhum valor verificavel citado (so limiares, ou nenhum R$ no texto)",[],[],[]
+CLI-029,False,"3/3 valores citados nao correspondem a nenhuma operacao, soma diaria ou agregado do cliente",[],"[14.0, 19.0, 71.29]",[]
+CLI-017,False,"3/3 valores citados nao correspondem a nenhuma operacao, soma diaria ou agregado do cliente",[],"[14.0, 18.0, 64.67]",[]
+CLI-030,False,"1/3 valores citados nao correspondem a nenhuma operacao, soma diaria ou agregado do cliente","[{'valor': 13086.77, 'fonte': 'media_cliente'}, {'valor': 4611.07, 'fonte': 'operacao OP-00285'}]",[85546.51],[]

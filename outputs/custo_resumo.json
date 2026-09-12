@@ -1,18 +1,92 @@
 {
-  "chamadas_api": 0,
-  "clientes": 0,
-  "chamadas_por_cliente": 0.0,
-  "tokens_entrada": 0,
-  "tokens_saida": 0,
-  "tokens_total": 0,
-  "custo_total_usd": 0.0,
-  "custo_medio_por_cliente_usd": 0.0,
-  "latencia_total_s": 0.0,
-  "latencia_media_por_chamada_s": 0.0,
-  "latencia_p95_s": 0.0,
-  "chamada_mais_cara_usd": 0.0,
-  "por_tipo_turno": {},
-  "por_cliente": {},
-  "projecao_30_clientes_usd": 0.0,
-  "projecao_10k_clientes_usd": 0.0
+  "chamadas_api": 19,
+  "clientes": 10,
+  "chamadas_por_cliente": 1.9,
+  "tokens_entrada": 14285,
+  "tokens_saida": 4961,
+  "tokens_total": 19246,
+  "custo_total_usd": 0.005119,
+  "custo_medio_por_cliente_usd": 0.000512,
+  "latencia_total_s": 22.51,
+  "latencia_media_por_chamada_s": 1.18,
+  "latencia_p95_s": 1.97,
+  "chamada_mais_cara_usd": 0.000451,
+  "por_tipo_turno": {
+    "decisao_ferramenta": {
+      "chamadas": 14,
+      "tokens_total": 12517,
+      "custo_usd": 0.003093,
+      "latencia_media_s": 0.860071
+    },
+    "resposta_final": {
+      "chamadas": 5,
+      "tokens_total": 6729,
+      "custo_usd": 0.002026,
+      "latencia_media_s": 2.0946
+    }
+  },
+  "por_cliente": {
+    "CLI-001": {
+      "chamadas": 2,
+      "tokens_total": 1966,
+      "custo_usd": 0.000513,
+      "latencia_total_s": 1.64
+    },
+    "CLI-005": {
+      "chamadas": 1,
+      "tokens_total": 786,
+      "custo_usd": 0.000184,
+      "latencia_total_s": 0.638
+    },
+    "CLI-013": {
+      "chamadas": 2,
+      "tokens_total": 1988,
+      "custo_usd": 0.000526,
+      "latencia_total_s": 1.806
+    },
+    "CLI-014": {
+      "chamadas": 2,
+      "tokens_total": 2124,
+      "custo_usd": 0.000608,
+      "latencia_total_s": 2.096
+    },
+    "CLI-017": {
+      "chamadas": 2,
+      "tokens_total": 1836,
+      "custo_usd": 0.000422,
+      "latencia_total_s": 1.274
+    },
+    "CLI-023": {
+      "chamadas": 1,
+      "tokens_total": 775,
+      "custo_usd": 0.000177,
+      "latencia_total_s": 1.589
+    },
+    "CLI-026": {
+      "chamadas": 2,
+      "tokens_total": 2028,
+      "custo_usd": 0.00055,
+      "latencia_total_s": 2.172
+    },
+    "CLI-028": {
+      "chamadas": 2,
+      "tokens_total": 2036,
+      "custo_usd": 0.000555,
+      "latencia_total_s": 2.039
+    },
+    "CLI-029": {
+      "chamadas": 2,
+      "tokens_total": 2274,
+      "custo_usd": 0.00065,
+      "latencia_total_s": 2.139
+    },
+    "CLI-030": {
+      "chamadas": 3,
+      "tokens_total": 3433,
+      "custo_usd": 0.000934,
+      "latencia_total_s": 7.121
+    }
+  },
+  "projecao_30_clientes_usd": 0.015358,
+  "projecao_10k_clientes_usd": 5.12
 }

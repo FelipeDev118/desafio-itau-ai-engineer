@@ -124,11 +124,16 @@ natureza diferente**: "o agente discordou da regra" e "o agente não produziu pa
 taxa pode significar tanto divergência de critério quanto instabilidade técnica, e são problemas
 com soluções opostas. `confronto.py` hoje reporta os dois separados:
 
-| Métrica | Execução atual |
+| Métrica | Execução atual (pós-correção do chute de data, ver seção 2) |
 |---|---|
-| Respostas válidas | **7/10** (3 esgotaram `max_turnos`) |
-| Concordância entre as válidas | **14%** (1/7) |
+| Respostas válidas | **10/10** (0 esgotaram `max_turnos` — antes da correção: 7/10) |
+| Concordância entre as válidas | **40%** (4/10 — antes: 14%, 1/7) |
 | Divergências qualitativas | 6 |
+
+A subida de 14% para 40% é sobretudo efeito do denominador (7→10 respostas válidas), não prova
+de que o agente calibrou melhor: são 6 divergentes nas duas execuções, só que agora sobre uma base
+maior. Ver nota de não-determinismo abaixo — não comparar essas duas execuções como "antes/depois"
+controlado, o prompt mudou entre elas.
 
 ### A divergência é sistemática, não aleatória — e essa é a informação
 
@@ -139,23 +144,34 @@ para quando múltiplos fatores se reforçam. Nenhum dos dois é "a verdade" — 
 threshold, e o fato de a discordância ser unidirecional é o dado interessante. Se fosse
 aleatória, apontaria para modelo instável; sendo sistemática, aponta para calibração.
 
-O caso mais didático é `CLI-029`: o parecer **reconhece explicitamente** o fracionamento
+Um caso didático da execução anterior (`CLI-029`) ilustra bem o padrão mesmo não sendo mais
+divergente nesta reexecução: o parecer **reconhecia explicitamente** o fracionamento
 ("4 operações em 2026-05-26, totalizando R$ 71.297,68... indica possível tentativa de evitar
-reporte") e mesmo assim classifica como médio. Ele não errou o fato; discordou da gravidade.
+reporte") e mesmo assim classificava como médio — não errava o fato, discordava da gravidade.
+Na execução atual esse mesmo cliente concorda com a regra (`alto`/`alto`) — outra confirmação de
+que a fronteira entre "médio" e "alto" não é estável no agente, é a mesma flag e o mesmo cliente
+mudando de lado entre rodadas.
 
 ### Mas a verificação de aderência mostrou que "discordar bem" não é a história toda
 
 Aqui as duas análises se cruzam, e o resultado é menos favorável ao agente do que a leitura
-acima sugeriria isolada: dos 7 pareceres válidos, **3 estavam fundamentados na operação errada**
-(ver seção de verificação de aderência). Ou seja, parte da "divergência de limiar" foi produzida
-por um raciocínio ancorado no número errado — `CLI-013` classificou como médio depois de apontar
-como "atípica" uma operação de R$ 312,54, a menor da base do cliente.
+acima sugeriria isolada: dos 10 pareceres válidos da execução atual, **apenas 3 estão
+fundamentados na operação certa** — pior em proporção do que os 4/7 (~57%) da execução anterior
+a corrigir o esgotamento de turnos, não melhor. Corrigir o chute de data resolveu o problema que
+ele foi desenhado para resolver (resposta válida: 70%→100%) e não tinha por que resolver este
+outro: são defeitos independentes, um de *quando* chamar uma ferramenta, outro de *qual número*
+citar depois de já ter os dados. `CLI-028` ilustra o segundo: o parecer aponta como "único evento
+de valor atípico" uma operação de R$ 6.913,84, mas as operações que de fato carregam
+`flag_valor_atipico=True` para esse cliente são de R$ 27.715,48 e R$ 24.875,39 — mais que o dobro
+do valor citado.
 
 **A conclusão honesta**: a divergência sistemática é real e interessante, mas eu não posso
-afirmar que ela representa um julgamento melhor que o da regra, porque em 3 dos 7 casos o
-julgamento partiu de premissa factualmente errada. É exatamente por isso que a verificação de
-aderência precisa rodar **antes** de qualquer análise de divergência — sem ela, eu teria escrito
-uma seção elogiando o discernimento do agente.
+afirmar que ela representa um julgamento melhor que o da regra, porque na maioria dos casos válidos
+(7 de 10) o julgamento partiu de premissa factualmente errada. É exatamente por isso que a
+verificação de aderência precisa rodar **antes** de qualquer análise de divergência — sem ela, eu
+teria escrito uma seção elogiando o discernimento do agente. E é por isso, também, que "consertar
+o agente" não é uma linha só: max_turnos e aderência são bugs diferentes, com correções diferentes,
+e um não avança o outro.
 
 ### Nota de não-determinismo
 
@@ -314,8 +330,42 @@ esgotou os turnos disponíveis chamando `operacoes_do_dia` repetidamente com dat
 para clientes sem `flag_fracionamento` (que não recebem `datas_fracionamento` no prompt).
 Corrigi `nivel_2/confronto.py` para separar "respostas válidas" de "taxa de concordância entre
 as válidas" — a métrica de 10% escondia que 30% das chamadas simplesmente falharam por outro
-motivo. Esse comportamento secundário (o modelo chutar uma data quando não tem uma fornecida)
-fica registrado como limitação nova, não resolvida agora — ver seção 2.
+motivo. Esse comportamento secundário (o modelo chutar uma data quando não tem uma fornecida) ficou
+registrado como limitação, e foi corrigido depois — ver "O agente chutava data em
+`operacoes_do_dia`... — corrigido", abaixo.
+
+## O agente chutava data em `operacoes_do_dia` e esgotava `max_turnos` — corrigido
+
+Achado da auditoria original (`outputs/pareceres_lote.json` da entrega): 3 dos 10 clientes
+(`CLI-023`, `CLI-005`, `CLI-030`) esgotavam `max_turnos=4` sem produzir parecer. Os três têm
+`flag_valor_atipico=True` e `flag_fracionamento=False` — ou seja, **nenhuma data vem nas flags**.
+Inspecionando `tools_chamadas` de cada um: o agente chamava `operacoes_do_dia` três vezes
+seguidas, cada vez com uma data diferente e nenhuma delas fornecida ou observada em qualquer
+retorno de ferramenta anterior — puro chute, "pescando" um dia que desse informação. Isso
+consumia os 4 turnos sem sobrar um para a resposta final.
+
+**Correção** (`nivel_2/agente.py`, `SYSTEM_PROMPT`): a regra de uso de `operacoes_do_dia` deixou
+de assumir que "não inventar data" só importa quando `datas_fracionamento` está presente.
+Agora o prompt é explícito nos dois lados: use a data das flags quando houver, ou uma data já
+*observada* em outra ferramenta (ex.: `data_min`/`data_max` de `historico_cliente`); se não há
+nenhuma data concreta disponível, **não chame a ferramenta** — produzir o parecer sem esse dado
+é uma decisão válida, não motivo para adivinhar. Bump em `VERSAO_PROMPT` (`v2` → `v3`) para não
+reaproveitar pareceres cacheados com a instrução antiga.
+
+**Validação contra a API real** (não simulada), em duas etapas:
+
+1. Rodei os 3 clientes que historicamente esgotavam turno, duas vezes, sem cache. Nas 6 execuções
+   (2 × 3 clientes): 0 chamadas a `operacoes_do_dia`, 0 esgotamentos de `max_turnos`, 6/6 pareceres
+   produzidos (`historico_cliente` sozinho, ou seguido de `perfil_canal` — nunca uma data chutada).
+2. Reexecutei o lote completo dos 10 clientes (`nivel_2/lote.py`, sem cache aproveitável — o bump
+   de `VERSAO_PROMPT` invalidou as entradas antigas) e reauditei com `confronto.py` e
+   `verificacao_aderencia.py`. Resultado: **10/10 respostas válidas, 0 esgotamentos** (era 7/10,
+   3 esgotando). O efeito colateral: **a aderência não melhorou** — 3/10 pareceres corretamente
+   fundamentados nesta execução, contra 4/7 (~57%) antes. Isso é esperado, não uma regressão desta
+   correção: consertar *quando* o agente chama uma ferramenta não muda *qual número* ele cita
+   depois de ter os dados — são bugs independentes (ver "Mas a verificação de aderência mostrou
+   que 'discordar bem' não é a história toda", acima). Números atualizados no README e na tabela
+   de confronto desta seção.
 
 ## Pressupostos das regras que dados reais violam
 
@@ -362,15 +412,10 @@ não existia antes disso. Rodar: `source .venv/bin/activate && python -m pytest 
   `gpt-oss` via Groq; trocar de provedor exige revisitar essa parte.
 - **Só os 10 mais sinalizados passam pelo agente**, por causa do rate limit; os outros 20
   clientes não recebem parecer, e não há como saber se algum deveria ter sido pego.
-- **`max_turnos=4` pode não bastar.** Mais de um cliente já esgotou o limite sem responder — o
-  tratamento de malformado funcionou, mas o caso não chegou a parecer nenhum.
-- **O agente inventa data quando não recebe uma.** Para clientes sem `flag_fracionamento` (que
-  não têm `datas_fracionamento` no prompt), o modelo às vezes chama `operacoes_do_dia` mesmo
-  assim, com uma data chutada sem grounding nos dados — comportamento que ajudou a esgotar
-  `max_turnos` em 3 dos 10 clientes numa execução. A correção simétrica à do fracionamento seria
-  a mesma ideia: ou o prompt deixa mais explícito que a ferramenta só deve ser usada quando há
-  uma data fornecida, ou o agente aprende (via few-shot) que "investigar sem pista de data" é
-  uma decisão válida por si só, não motivo para adivinhar.
+- ~~**`max_turnos=4` pode não bastar** / **agente inventa data quando não recebe uma.**~~
+  Resolvido — ver "O agente chutava data em `operacoes_do_dia`..." acima: validado nos 3 clientes
+  que historicamente esgotavam turno e confirmado no lote completo re-executado (10/10 respostas
+  válidas).
 
 ---
 
