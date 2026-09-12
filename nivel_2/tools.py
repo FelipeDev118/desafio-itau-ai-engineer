@@ -1,11 +1,25 @@
 """Ferramentas que o agente pode chamar para investigar um cliente.
 Cada função consulta a base já tratada (ver dados.py) — cálculo puro, sem LLM."""
+from functools import lru_cache
+
 import pandas as pd
 
 from dados import aplicar_regras, carregar_e_limpar
 
 
-def _df():
+@lru_cache(maxsize=1)
+def _df() -> pd.DataFrame:
+    """Le e trata o JSON uma unica vez por processo, nao a cada chamada de ferramenta.
+
+    Num lote de 10 clientes o agente chama entre 1 e 3 ferramentas por cliente - 26
+    releituras completas do JSON (322 linhas) numa execucao real, cada uma reaplicando
+    dedup + parsing de data + conversao de moeda + as duas regras. Inofensivo neste
+    volume, mas e trabalho redundante que cresce com a base: 30 clientes ja seriam a
+    mesma releitura repetida por mais operacoes. As funcoes abaixo so leem (`df[...]`),
+    nunca mutam o DataFrame devolvido, entao compartilhar a mesma instancia entre
+    chamadas e seguro - `lru_cache` sem argumentos guarda uma unica instancia por
+    processo (reprocessada do zero a cada novo `python lote.py`/`confronto.py`, nunca
+    stale entre execucoes)."""
     df, _ = carregar_e_limpar()
     return aplicar_regras(df)
 

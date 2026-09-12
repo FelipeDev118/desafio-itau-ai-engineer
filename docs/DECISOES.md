@@ -222,14 +222,28 @@ financeira. A arquitetura teria que mudar: modelo hospedado no perímetro do ban
 pseudonimização antes do envio com re-identificação só do lado de cá. Nada nesta entrega trata
 disso.
 
-## As ferramentas releem a base inteira a cada chamada
+## As ferramentas releem a base inteira a cada chamada — parcialmente corrigido
 
-`tools.py` chama `carregar_e_limpar()` **e** `aplicar_regras()` a cada invocação — ou seja, lê o
-JSON inteiro e recalcula todas as regras de todos os clientes para responder sobre **um**. No
+`tools.py` chamava `carregar_e_limpar()` **e** `aplicar_regras()` a cada invocação — ou seja, lia
+o JSON inteiro e recalculava todas as regras de todos os clientes para responder sobre **um**. No
 lote foram **26 chamadas de ferramenta = 26 releituras completas**. Com 322 operações são 35 ms
-e ninguém percebe; com o volume real de um banco isso não roda. A correção não é micro-otimização
-e sim mudar a fronteira: as ferramentas deveriam consultar um *store* já materializado
-(banco de dados com índice por `cliente_id` e por data), não reprocessar o arquivo bruto.
+e ninguém percebe; com o volume real de um banco isso não roda.
+
+**Correção aplicada** (`nivel_2/tools.py`, `_df()` com `@lru_cache(maxsize=1)`): o JSON é lido e
+as regras aplicadas **uma única vez por processo**, não a cada chamada de ferramenta — as três
+funções (`historico_cliente`, `operacoes_do_dia`, `perfil_canal`) só filtram (`df[...]`), nunca
+mutam o DataFrame devolvido, então compartilhar a mesma instância entre chamadas é seguro.
+Beneficia também o Nível 3 (MCP) de graça, porque `mcp_server.py` importa essas mesmas funções.
+**Validado**: teste de regressão em `tests/test_tools.py` — mockando `carregar_e_limpar`, 3
+chamadas de ferramenta diferentes resultam em **1** leitura, não 3 (e o teste falharia se alguém
+reintroduzisse a releitura por engano).
+
+**O que isto NÃO resolve** (a lacuna mais funda, para quando houver mais tempo): a correção acima
+elimina o trabalho *redundante dentro de uma mesma execução*, não muda a fronteira de fundo. Em
+volume real de banco, nem isso bastaria — o processo inteiro ainda carrega a base inteira em
+memória a cada `python lote.py`/`confronto.py`/`mcp_server.py` novo, sem persistência entre
+execuções nem índice por `cliente_id`/data. A correção completa continua sendo um *store*
+materializado (banco de dados com índice), como já apontado aqui antes.
 
 ## O LLM não é determinístico — mitigado com cache, não resolvido na raiz
 
