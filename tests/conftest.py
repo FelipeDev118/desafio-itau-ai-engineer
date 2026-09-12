@@ -19,6 +19,13 @@ NIVEL_2 = RAIZ / "nivel_2"
 if str(NIVEL_2) not in sys.path:
     sys.path.insert(0, str(NIVEL_2))
 
+# A raiz tambem, para `from mesa import ...`. Sem isto os testes do pacote mesa/
+# so passam via `python -m pytest` (que insere o CWD no sys.path por conta
+# propria) e quebram com um `pytest tests/` direto - dependencia silenciosa de
+# COMO o teste foi invocado, que ja pegou uma vez.
+if str(RAIZ) not in sys.path:
+    sys.path.insert(0, str(RAIZ))
+
 
 def escrever_dataset(tmp_path, operacoes, taxa=5.4):
     """Escreve um dataset sintético no formato de dados/dados_nivel_2.json e devolve

@@ -36,6 +36,27 @@ services:
     command: >
       sh -c "python nivel_3/agente_mcp.py --lote && python nivel_3/comparar_transportes.py"
 
+  # Mesa de Triagem, Fase 0 + importacao do historico: monta o store do zero e
+  # verifica que ele reproduz os numeros da entrega. Sem chave e sem LLM.
+  mesa:
+    build: .
+    volumes:
+      - ./outputs:/app/outputs
+    command: >
+      sh -c "python -m mesa.ingestao && python -m mesa.regras_run &&
+             python -m mesa.importar_cache && python verificar_ambiente.py --store"
+
+  # Fase 1: o worker consome a fila de alertas e exporta os artefatos de outputs/.
+  # Precisa da chave APENAS se algum alerta nao for coberto pelo historico
+  # importado - com o cache completo, roda com zero chamada de API.
+  mesa-triagem:
+    build: .
+    env_file: .env
+    volumes:
+      - ./outputs:/app/outputs
+    command: >
+      sh -c "python -m mesa.triagem && python -m mesa.exportar"
+
   # Verificacao rapida de que o ambiente do container esta igual ao descrito na entrega,
   # sem gastar chamada de LLM.
   verificar:
