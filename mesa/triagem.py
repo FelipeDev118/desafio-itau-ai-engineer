@@ -142,6 +142,7 @@ def triar(conn: sqlite3.Connection, execucao_id: int | None = None,
                 "valores_confirmados": aderencia.valores_confirmados,
                 "valores_nao_encontrados": aderencia.valores_nao_encontrados,
                 "atipicos_incorretos": aderencia.atipicos_incorretos,
+                "marcas": aderencia.marcas,
             })
             if aderencia.fundamentado:
                 resultado_geral.fundamentados += 1

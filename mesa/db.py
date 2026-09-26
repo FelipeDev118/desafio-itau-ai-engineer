@@ -25,7 +25,7 @@ ESQUEMA_SQL = Path(__file__).resolve().parent / "esquema.sql"
 # dado sintetico reprocessavel, alterar o esquema significa apagar o banco e
 # reingerir - barato e honesto. No dia em que houver decisao de analista gravada
 # aqui, isso deixa de ser aceitavel e a migracao vira pre-requisito.
-VERSAO_ESQUEMA = 4
+VERSAO_ESQUEMA = 5
 
 
 def agora_utc() -> str:

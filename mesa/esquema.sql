@@ -206,6 +206,11 @@ CREATE TABLE IF NOT EXISTS aderencia (
     valores_confirmados_json     TEXT    NOT NULL,
     valores_nao_encontrados_json TEXT    NOT NULL,
     atipicos_incorretos_json     TEXT    NOT NULL,
+    -- ONDE cada valor citado esta na justificativa e como foi classificado:
+    -- [{inicio, fim, valor, classe, fonte}]. Gravado na MESMA execucao do
+    -- verificador que produziu a classificacao, para as duas coisas nunca
+    -- divergirem - e para a tela (Fase 3) nao precisar de um segundo parser.
+    marcas_json                  TEXT    NOT NULL DEFAULT '[]',
     verificado_em                TEXT    NOT NULL
 );
 

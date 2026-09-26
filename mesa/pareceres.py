@@ -159,7 +159,8 @@ class RepositorioPareceres:
         self.conn.execute(
             "INSERT OR REPLACE INTO aderencia (parecer_id, fundamentado, motivo, "
             "valores_confirmados_json, valores_nao_encontrados_json, "
-            "atipicos_incorretos_json, verificado_em) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "atipicos_incorretos_json, marcas_json, verificado_em) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 parecer_id,
                 int(bool(aderencia.get("fundamentado"))),
@@ -167,6 +168,7 @@ class RepositorioPareceres:
                 json.dumps(aderencia.get("valores_confirmados", []), ensure_ascii=False, default=str),
                 json.dumps(aderencia.get("valores_nao_encontrados", []), ensure_ascii=False, default=str),
                 json.dumps(aderencia.get("atipicos_incorretos", []), ensure_ascii=False, default=str),
+                json.dumps(aderencia.get("marcas", []), ensure_ascii=False, default=str),
                 agora_utc(),
             ),
         )
