@@ -37,20 +37,29 @@ def agora_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def conectar(caminho: Path | str = CAMINHO_PADRAO, criar_esquema: bool = True) -> sqlite3.Connection:
+def conectar(caminho: Path | str = CAMINHO_PADRAO, criar_esquema: bool = True,
+             check_same_thread: bool = True) -> sqlite3.Connection:
     """Abre (e cria, se preciso) o banco com os PRAGMAs que o resto do codigo assume.
 
     `foreign_keys=ON` nao e opcional aqui: o SQLite deixa as FKs DESLIGADAS por
     padrao, por compatibilidade historica, e por conexao - declarar REFERENCES no
     DDL sem ligar o PRAGMA e ter integridade referencial so no comentario. Como e
     por conexao, tem que ser feito aqui e nao no esquema.
+
+    `check_same_thread=False` e para a API (mesa/api.py), e so para ela. O
+    FastAPI abre a conexao numa thread do pool, roda o endpoint em outra e fecha
+    numa terceira - e o sqlite3 recusa, por padrao, usar a conexao fora da thread
+    que a criou. Medido, nao suposto: 278 de 300 requisicoes concorrentes deram
+    500 com o padrao. Desligar a checagem e seguro ali porque cada requisicao tem
+    a PROPRIA conexao, que troca de thread mas nunca e usada por duas ao mesmo
+    tempo. Compartilhar uma conexao entre requisicoes continuaria sendo erro.
     """
     caminho = Path(caminho)
     em_memoria = str(caminho) == ":memory:"
     if not em_memoria:
         caminho.parent.mkdir(parents=True, exist_ok=True)
 
-    conn = sqlite3.connect(caminho)
+    conn = sqlite3.connect(caminho, check_same_thread=check_same_thread)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     if not em_memoria:

@@ -57,6 +57,21 @@ services:
     command: >
       sh -c "python -m mesa.triagem && python -m mesa.exportar"
 
+  # Fase 2: a API da Mesa sobre o store. Precisa do store montado antes
+  # (servicos `mesa` e `mesa-triagem`). Documentacao interativa em /docs.
+  #
+  # A porta e publicada SO em 127.0.0.1 do host, de proposito: a API ainda nao
+  # tem autenticacao (X-Analista e identificacao, nao seguranca). Dentro do
+  # container o uvicorn precisa ouvir em 0.0.0.0 para o mapeamento funcionar;
+  # quem restringe a exposicao e o "127.0.0.1:" do lado do host.
+  api:
+    build: .
+    volumes:
+      - ./outputs:/app/outputs
+    ports:
+      - "127.0.0.1:8000:8000"
+    command: uvicorn mesa.api:app --host 0.0.0.0 --port 8000
+
   # Verificacao rapida de que o ambiente do container esta igual ao descrito na entrega,
   # sem gastar chamada de LLM.
   verificar:
