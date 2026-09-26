@@ -22,6 +22,8 @@ from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import mesa  # noqa: F401  - poe nivel_2/ no sys.path
@@ -29,6 +31,10 @@ from confronto import _normalizar_nivel
 from mesa import db
 
 Estado = Literal["novo", "triado", "em_analise", "concluido"]
+
+# A tela da Fase 3 (HTML + JS puro, sem build) servida pela propria API: mesma
+# origem, nenhum segundo servidor para subir, nenhum CORS para configurar.
+WEB_DIR = Path(__file__).resolve().parent / "web"
 
 # As transicoes que ESTE endpoint aceita. Tres, e so tres.
 #
@@ -113,12 +119,26 @@ class Parecer(BaseModel):
     criado_em: str
 
 
+class Marca(BaseModel):
+    """Um valor em R$ citado na justificativa: onde esta (posicoes no texto) e
+    como o verificador o classificou. A tela marca o trecho texto[inicio:fim]
+    sem procurar numero nenhum por conta propria."""
+    inicio: int
+    fim: int
+    valor: float
+    classe: Literal["confirmado", "nao_encontrado", "atipico_incorreto", "limiar"]
+    # "operacao OP-00269", "mediana_cliente", "soma_do_dia_2026-05-26",
+    # "soma_canal_ted"... - o nome da referencia que conferiu, vindo do verificador
+    fonte: str | None
+
+
 class Aderencia(BaseModel):
     fundamentado: bool
     motivo: str
     valores_confirmados: list[Any]
     valores_nao_encontrados: list[Any]
     atipicos_incorretos: list[Any]
+    marcas: list[Marca]
 
 
 class Operacao(BaseModel):
@@ -155,6 +175,10 @@ class Caso(BaseModel):
     # O append-only ficando VISIVEL: se este cliente ja recebeu outro parecer,
     # o analista ve. E a razao de a Fase 1 existir.
     historico_parecer: list[VersaoParecer]
+    # Para onde este caso pode ir a partir do estado atual, derivado da MESMA
+    # tabela TRANSICOES que o POST aplica. A tela mostra so estes botoes em vez
+    # de manter uma segunda copia da maquina de estados em JavaScript.
+    transicoes_permitidas: list[Estado]
 
 
 class Evidencia(BaseModel):
@@ -472,6 +496,7 @@ def caso(alerta_id: int, conn: sqlite3.Connection = Depends(conexao)):
                 valores_confirmados=json.loads(a["valores_confirmados_json"]),
                 valores_nao_encontrados=json.loads(a["valores_nao_encontrados_json"]),
                 atipicos_incorretos=json.loads(a["atipicos_incorretos_json"]),
+                marcas=json.loads(a["marcas_json"]),
             )
 
     historico = [
@@ -496,6 +521,7 @@ def caso(alerta_id: int, conn: sqlite3.Connection = Depends(conexao)):
         aderencia=aderencia,
         operacoes=operacoes,
         historico_parecer=historico,
+        transicoes_permitidas=sorted(d for o, d in TRANSICOES if o == alerta["estado"]),
     )
 
 
@@ -540,8 +566,18 @@ def mudar_estado(
     if not analista:
         raise HTTPException(400, "header X-Analista obrigatorio para mudar o estado de um caso")
 
-    atual = _alerta_ou_404(conn, alerta_id)["estado"]
+    alerta = _alerta_ou_404(conn, alerta_id)
+    atual, dono = alerta["estado"], alerta["analista_id"]
     destino = corpo.estado
+    # nas mensagens, o caso pelo nome que o analista conhece (CLI-028), nao
+    # pelo id interno do alerta
+    caso_nome = alerta["cliente_id"]
+
+    # Caso ja pego por outro: e o conflito mais comum (tela desatualizada), e
+    # merece dizer QUEM pegou, nao "transicao em_analise -> em_analise".
+    if atual == "em_analise" and destino == "em_analise":
+        quem = "voce" if dono == analista else dono
+        raise HTTPException(409, f"o caso {caso_nome} ja esta em analise com {quem}")
 
     if (atual, destino) not in TRANSICOES:
         permitidas = sorted(d for o, d in TRANSICOES if o == atual)
@@ -552,20 +588,34 @@ def mudar_estado(
         )
         raise HTTPException(409, f"transicao '{atual}' -> '{destino}' nao permitida: {motivo}")
 
+    # So quem pegou pode devolver. Sem esta regra, qualquer analista com a
+    # pagina aberta devolveria para a fila um caso em analise por outro, e o dono
+    # nem ficaria sabendo. (Nao e controle de acesso - X-Analista e so
+    # identificacao, ver 2.5 -, mas impede a interferencia por engano. Reatribuir
+    # caso de outro e papel de supervisor, que depende de autenticacao de verdade.)
+    if atual == "em_analise" and destino == "triado" and dono and dono != analista:
+        raise HTTPException(
+            409, f"o caso {caso_nome} esta em analise com {dono}; so quem pegou o caso pode devolve-lo"
+        )
+
     # Pegar o caso grava quem pegou; devolver para a fila libera o dono.
     novo_analista = analista if destino == "em_analise" else None
 
     # Compare-and-set: so atualiza se o estado AINDA for o que acabamos de ler.
     # Ler-e-depois-escrever deixaria dois analistas pegarem o mesmo caso ao mesmo
     # tempo; com a condicao no WHERE, o banco garante que so um vence.
+    # O dono lido tambem entra na condicao (`IS` compara NULL com seguranca):
+    # se outro analista pegou e devolveu o caso entre a leitura e a escrita, o
+    # estado voltou ao mesmo, mas o caso ja nao e o que foi lido.
     cur = conn.execute(
-        "UPDATE alertas SET estado = ?, analista_id = ? WHERE id = ? AND estado = ?",
-        (destino, novo_analista, alerta_id, atual),
+        "UPDATE alertas SET estado = ?, analista_id = ? "
+        "WHERE id = ? AND estado = ? AND analista_id IS ?",
+        (destino, novo_analista, alerta_id, atual, dono),
     )
     conn.commit()
     if cur.rowcount == 0:
         raise HTTPException(
-            409, f"o caso {alerta_id} mudou de estado durante a requisicao - recarregue e tente de novo"
+            409, f"o caso {caso_nome} mudou de estado durante a requisicao - recarregue e tente de novo"
         )
 
     return Transicao(
@@ -607,3 +657,18 @@ def execucao(execucao_id: int, conn: sqlite3.Connection = Depends(conexao)):
     if linha is None:
         raise HTTPException(404, f"execucao {execucao_id} nao existe")
     return _execucao_modelo(linha)
+
+
+# ============================================================================
+# Fase 3 - a tela
+# ============================================================================
+
+
+@app.get("/", include_in_schema=False)
+def raiz():
+    return RedirectResponse("/app/")
+
+
+# Montado por ULTIMO: um mount captura o prefixo inteiro, e registrado antes das
+# rotas poderia sombrear alguma. html=True serve o index.html em /app/.
+app.mount("/app", StaticFiles(directory=WEB_DIR, html=True), name="tela")

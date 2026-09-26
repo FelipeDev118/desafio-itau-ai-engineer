@@ -428,7 +428,25 @@ def test_caso_ja_em_analise_nao_pode_ser_pego_de_novo(cliente):
 
     r = _mudar(cliente, aid, "em_analise", analista="bruno")
     assert r.status_code == 409
+    # a mensagem diz QUEM pegou - e o que o analista com a tela desatualizada
+    # precisa saber, nao o nome tecnico da transicao
+    assert r.json()["detail"] == "o caso CLI-014 ja esta em analise com ana"
     assert _estado(cliente, aid)["analista_id"] == "ana"
+
+
+def test_so_quem_pegou_pode_devolver(cliente):
+    """Sem esta regra, qualquer analista com a pagina aberta devolveria para a
+    fila um caso em analise por outro - e o dono nem ficaria sabendo."""
+    aid = _alerta_de(cliente, "CLI-014")
+    assert _mudar(cliente, aid, "em_analise", analista="ana").status_code == 200
+
+    r = _mudar(cliente, aid, "triado", analista="bruno")
+    assert r.status_code == 409
+    assert "ana" in r.json()["detail"]
+    depois = _estado(cliente, aid)
+    assert (depois["estado"], depois["analista_id"]) == ("em_analise", "ana")
+
+    assert _mudar(cliente, aid, "triado", analista="ana").status_code == 200
 
 
 def test_api_nao_duplica_o_caminho_do_worker(cliente_novo):
@@ -593,3 +611,59 @@ def test_estado_que_muda_entre_a_leitura_e_a_escrita_e_409(cliente, monkeypatch)
     assert r.status_code == 409
     assert "mudou de estado" in r.json()["detail"]
     assert _estado(cliente, aid)["analista_id"] == "bruno"  # quem chegou primeiro fica
+
+
+# ============================================================================
+# Fase 3 - o que a API passou a entregar para a tela
+# ============================================================================
+
+
+def test_marcas_apontam_para_o_trecho_exato_da_justificativa(cliente):
+    """As posicoes gravadas pelo verificador sobrevivem ao store e a API: o
+    trecho justificativa[inicio:fim] e exatamente o numero que o leitor ve."""
+    caso = cliente.get(f"/alertas/{_alerta_de(cliente, 'CLI-028')}").json()
+    texto = caso["parecer"]["justificativa"]
+    marcas = caso["aderencia"]["marcas"]
+
+    errada = next(m for m in marcas if m["classe"] == "atipico_incorreto")
+    assert texto[errada["inicio"]:errada["fim"]] == "R$6.913,84"
+    assert errada["fonte"] == "operacao OP-00269"
+
+
+def test_marcas_de_todos_os_casos_caem_dentro_do_texto(cliente):
+    """Nenhuma marca pode apontar para fora da justificativa, nem se sobrepor."""
+    for item in cliente.get("/fila?origem=todos&limite=200").json()["itens"]:
+        caso = cliente.get(f"/alertas/{item['alerta_id']}").json()
+        if not caso["parecer"] or not caso["aderencia"]:
+            continue
+        texto = caso["parecer"]["justificativa"]
+        fim_anterior = 0
+        for m in caso["aderencia"]["marcas"]:
+            assert 0 <= m["inicio"] < m["fim"] <= len(texto), item["cliente_id"]
+            assert m["inicio"] >= fim_anterior, f"marcas sobrepostas em {item['cliente_id']}"
+            assert "R$" in texto[m["inicio"]:m["fim"]] or "BRL" in texto[m["inicio"]:m["fim"]]
+            fim_anterior = m["fim"]
+
+
+def test_mediana_marcada_como_agregado_e_nao_como_operacao(cliente):
+    """<<< aceite do 3.2 >>> CLI-014 tem 11 operacoes: a mediana e o valor exato
+    de uma operacao real (OP-00127). A marca tem que apontar para a mediana."""
+    caso = cliente.get(f"/alertas/{_alerta_de(cliente, 'CLI-014')}").json()
+    texto = caso["parecer"]["justificativa"]
+    mediana = next(m for m in caso["aderencia"]["marcas"] if "2.308,41" in texto[m["inicio"]:m["fim"]])
+    assert mediana["fonte"] == "mediana_cliente"
+    assert any(abs(o["valor_brl"] - 2308.41) < 0.01 for o in caso["operacoes"])  # a armadilha existe
+
+
+def test_transicoes_permitidas_seguem_a_mesma_tabela_do_post(cliente):
+    """A tela mostra so os botoes que a API diz. Se esta lista e a do POST
+    divergissem, a tela ofereceria um botao que sempre da 409."""
+    aid = _alerta_de(cliente, "CLI-014")
+    assert cliente.get(f"/alertas/{aid}").json()["transicoes_permitidas"] == ["em_analise"]
+
+    _mudar(cliente, aid, "em_analise")
+    assert cliente.get(f"/alertas/{aid}").json()["transicoes_permitidas"] == ["triado"]
+
+    for destino in cliente.get(f"/alertas/{aid}").json()["transicoes_permitidas"]:
+        assert _mudar(cliente, aid, destino).status_code == 200
+

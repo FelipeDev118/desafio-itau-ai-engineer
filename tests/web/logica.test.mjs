@@ -1,0 +1,131 @@
+// Testes da logica pura da tela (mesa/web/logica.js). Rodam com o test runner
+// nativo do Node, sem dependencia nenhuma:  node --test "tests/web/*.test.mjs"
+// (o Node 22 nao descobre testes a partir de um diretorio - precisa do glob)
+// O pytest os executa tambem (tests/test_mesa_web.py), para a suite ter um
+// ponto de entrada so.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  alvoDaFonte, explicacaoDaMarca, formatarBRL, formatarData, formatarMomento,
+  operacaoEhAlvo, rotuloDaFonte, segmentar, situacaoDaFila,
+} from "../../mesa/web/logica.js";
+
+// ---------- segmentar: o texto do parecer nunca pode perder um pedaco ----------
+
+const juntar = (trechos) => trechos.map((t) => t.texto).join("");
+
+test("segmentar marca exatamente as posicoes gravadas", () => {
+  const texto = "Media de R$7.395,9 e evento de R$6.913,84 no cartao.";
+  const marcas = [
+    { inicio: 9, fim: 18, classe: "confirmado", fonte: "media_cliente" },
+    { inicio: 31, fim: 41, classe: "atipico_incorreto", fonte: "operacao OP-00269" },
+  ];
+  const trechos = segmentar(texto, marcas);
+  assert.deepEqual(trechos.filter((t) => t.marca).map((t) => t.texto), ["R$7.395,9", "R$6.913,84"]);
+  assert.equal(juntar(trechos), texto);
+});
+
+test("segmentar sem marcas devolve o texto inteiro", () => {
+  assert.deepEqual(segmentar("sem numeros aqui", []), [{ texto: "sem numeros aqui", marca: null }]);
+  assert.deepEqual(segmentar("sem numeros aqui", null), [{ texto: "sem numeros aqui", marca: null }]);
+});
+
+test("segmentar ordena marcas fora de ordem", () => {
+  const texto = "A R$1 B R$2 C";
+  const trechos = segmentar(texto, [
+    { inicio: 8, fim: 11, classe: "confirmado" },
+    { inicio: 2, fim: 5, classe: "confirmado" },
+  ]);
+  assert.deepEqual(trechos.filter((t) => t.marca).map((t) => t.texto), ["R$1", "R$2"]);
+  assert.equal(juntar(trechos), texto);
+});
+
+test("marca ruim e ignorada, mas o texto sai inteiro", () => {
+  // Perder uma marcacao e aceitavel; perder parte do parecer que o analista
+  // precisa ler, nao.
+  const texto = "Valor de R$ 100,00 citado.";
+  const ruins = [
+    { inicio: 9, fim: 18, classe: "confirmado" },   // valida
+    { inicio: 12, fim: 20, classe: "confirmado" },  // sobreposta a anterior
+    { inicio: 20, fim: 999, classe: "confirmado" }, // passa do fim do texto
+    { inicio: 5, fim: 5, classe: "confirmado" },    // vazia
+    { inicio: -3, fim: 2, classe: "confirmado" },   // negativa
+    { inicio: "9", fim: 18, classe: "confirmado" }, // tipo errado
+  ];
+  const trechos = segmentar(texto, ruins);
+  assert.equal(juntar(trechos), texto);
+  assert.equal(trechos.filter((t) => t.marca).length, 1);
+});
+
+// ---------- fonte -> alvo: o que o numero clicado destaca ----------
+
+test("alvoDaFonte reconhece os nomes que o verificador grava", () => {
+  assert.deepEqual(alvoDaFonte("operacao OP-00269"), { tipo: "operacao", id: "OP-00269" });
+  assert.deepEqual(alvoDaFonte("soma_do_dia_2026-05-26"), { tipo: "dia", data: "2026-05-26" });
+  assert.deepEqual(alvoDaFonte("soma_canal_ted"), { tipo: "canal", canal: "ted" });
+  assert.deepEqual(alvoDaFonte("mediana_cliente"), { tipo: "agregado", nome: "mediana" });
+  assert.deepEqual(alvoDaFonte("media_cliente"), { tipo: "agregado", nome: "media" });
+  assert.deepEqual(alvoDaFonte("volume_total_cliente"), { tipo: "agregado", nome: "volume" });
+  assert.equal(alvoDaFonte(null), null);
+  assert.equal(alvoDaFonte("fonte_desconhecida"), null);
+});
+
+test("a mediana NAO aponta para operacao nenhuma", () => {
+  // O bug que o verificador ja teve: com numero impar de operacoes, a mediana
+  // coincide com o valor de uma operacao real. Clicar nela na tela tem que
+  // destacar "mediana do cliente", nunca aquela operacao.
+  const alvo = alvoDaFonte("mediana_cliente");
+  const operacaoDoMeio = { id: "OP-00041", data: "2026-05-07", canal: "pix", valor_brl: 2308.41 };
+  assert.equal(operacaoEhAlvo(operacaoDoMeio, alvo), false);
+});
+
+test("operacaoEhAlvo liga por id, por dia e por canal", () => {
+  const op = { id: "OP-1", data: "2026-05-26", canal: "ted" };
+  assert.equal(operacaoEhAlvo(op, { tipo: "operacao", id: "OP-1" }), true);
+  assert.equal(operacaoEhAlvo(op, { tipo: "operacao", id: "OP-2" }), false);
+  assert.equal(operacaoEhAlvo(op, { tipo: "dia", data: "2026-05-26" }), true);
+  assert.equal(operacaoEhAlvo(op, { tipo: "canal", canal: "ted" }), true);
+  assert.equal(operacaoEhAlvo(op, { tipo: "canal", canal: "pix" }), false);
+  assert.equal(operacaoEhAlvo(op, null), false);
+});
+
+test("rotulos das fontes sao legiveis", () => {
+  assert.equal(rotuloDaFonte("operacao OP-00269"), "operação OP-00269");
+  assert.equal(rotuloDaFonte("soma_do_dia_2026-05-26"), "soma do dia 26/05/2026");
+  assert.equal(rotuloDaFonte("soma_canal_ted"), "soma do canal TED");
+  assert.equal(rotuloDaFonte("mediana_cliente"), "mediana do cliente");
+});
+
+test("explicacao do atipico incorreto diz o que esta errado", () => {
+  const texto = explicacaoDaMarca({ classe: "atipico_incorreto", fonte: "operacao OP-00269" });
+  assert.match(texto, /OP-00269/);
+  assert.match(texto, /NÃO é uma das operações sinalizadas/);
+});
+
+// ---------- fila: "nao triado" nao e "diverge" ----------
+
+test("situacaoDaFila distingue nao triado de diverge", () => {
+  assert.equal(situacaoDaFila({ concorda: null }), "nao_triado");
+  assert.equal(situacaoDaFila({ concorda: undefined }), "nao_triado");
+  assert.equal(situacaoDaFila({ concorda: false }), "diverge");
+  assert.equal(situacaoDaFila({ concorda: true }), "concorda");
+});
+
+// ---------- formatacao ----------
+
+test("formatarBRL usa o padrao brasileiro", () => {
+  // Intl pode usar espaco nao separavel entre "R$" e o numero; normaliza
+  assert.equal(formatarBRL(6913.84).replace(/\s/g, " "), "R$ 6.913,84");
+  assert.equal(formatarBRL(null), "—");
+});
+
+test("formatarData nao desloca o dia pelo fuso", () => {
+  // new Date("2026-05-26") seria meia-noite UTC = dia 25 no horario de Brasilia
+  assert.equal(formatarData("2026-05-26"), "26/05/2026");
+  assert.equal(formatarData(null), "sem data");
+});
+
+test("formatarMomento deixa o fuso explicito", () => {
+  assert.equal(formatarMomento("2026-09-12T17:00:49Z"), "12/09/2026 17:00 UTC");
+});

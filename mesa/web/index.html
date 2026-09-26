@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mesa de Triagem PLD</title>
+  <!-- Nenhum recurso externo (fonte, CDN, script): a ferramenta tem que abrir
+       numa rede de banco sem acesso a internet. -->
+  <link rel="stylesheet" href="estilo.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="topo">
+    <div class="identidade">
+      <span class="nome">Mesa de Triagem</span>
+      <span class="sub">PLD · triagem de casos</span>
+    </div>
+
+    <div class="filtros" role="group" aria-label="Filtros da fila">
+      <label>
+        Estado
+        <select id="filtro-estado">
+          <option value="">todos</option>
+          <option value="novo">novo</option>
+          <option value="triado">triado</option>
+          <option value="em_analise">em análise</option>
+          <option value="concluido">concluído</option>
+        </select>
+      </label>
+      <label>
+        Origem
+        <select id="filtro-origem">
+          <option value="regra">com sinalização</option>
+          <option value="controle">controle (sem sinalização)</option>
+          <option value="todos">todos</option>
+        </select>
+      </label>
+    </div>
+
+    <label class="analista">
+      Analista
+      <input id="analista" type="text" placeholder="seu nome" autocomplete="off" spellcheck="false">
+    </label>
+  </header>
+
+  <main class="mesa">
+    <section class="fila" aria-labelledby="fila-titulo">
+      <header class="fila-cab">
+        <h2 id="fila-titulo">Fila</h2>
+        <span id="fila-total" class="fila-total"></span>
+      </header>
+      <ol id="fila-lista" class="fila-lista"></ol>
+      <button id="fila-mais" class="botao botao-sec fila-mais" type="button" hidden>Carregar mais</button>
+    </section>
+
+    <section id="caso" class="caso" aria-live="polite">
+      <div class="vazio">
+        <p>Selecione um caso na fila.</p>
+        <p class="vazio-sub">Cada número do parecer é ligado à operação de onde veio. Números sem procedência aparecem em vermelho.</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="aviso" class="aviso" role="status" hidden></div>
+</body>
+</html>
