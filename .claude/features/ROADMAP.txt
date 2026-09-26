@@ -427,11 +427,17 @@
      exportaveis, testadas com node --test SE node existir na maquina; a
      integracao tela+API conferida no navegador do app (Browser pane)
 
- [ ] 3.0  API serve a tela: StaticFiles em /app + redirect de / para /app
+ [x] 3.0  API serve a tela: StaticFiles em /app + redirect de / para /app
           ACEITE: GET /app devolve o index.html; /docs e as rotas da Fase 2
                   continuam intactas (os 45 testes da API seguem verdes).
 
- [ ] 3.1  Fila navegavel
+          FEITO 2026-09-26: StaticFiles em /app (montado por ULTIMO, para nao
+          sombrear rota) + redirect de /. Testado: /docs e as 7 rotas intactas,
+          app.js/logica.js servidos com tipo javascript (modulo ES com tipo
+          errado e recusado em silencio pelo navegador - tela em branco).
+          Comando: `.venv/bin/uvicorn mesa.api:app` e abrir http://localhost:8000
+          .claude/launch.json criado para o preview, COM --reload - ver 3.5.
+ [x] 3.1  Fila navegavel
           - consome GET /fila; filtros de estado e origem na propria tela
           - cada linha: cliente, nivel regra x agente, chip de concorda/diverge,
             chip de fundamentado, estado, dono
@@ -440,7 +446,12 @@
           - paginacao pelo proximo_cursor, nunca por numero de pagina
           ACEITE: 17 linhas na ordem do ranking; trocar para "todos" mostra 30.
 
- [ ] 3.2  Parecer com CADA numero ligado a sua operacao-fonte
+          FEITO 2026-09-26: 17 linhas na ordem do ranking; "todos" = 30.
+          Borda lateral codifica a situacao (diverge / nao triado tracejado),
+          para a fila ser lida de relance. "nao triado" tem chip proprio, sem
+          cor de alerta. Paginacao por "Carregar mais" com o proximo_cursor.
+          Rota por hash (#/alerta/N): recarregar mantem o caso aberto.
+ [x] 3.2  Parecer com CADA numero ligado a sua operacao-fonte
           - o texto da justificativa e percorrido e cada valor em R$ vira um
             elemento clicavel que destaca a operacao/agregado correspondente
           - a CORRESPONDENCIA vem de aderencia.valores_confirmados (que ja traz
@@ -455,7 +466,24 @@
           ACEITE: no CLI-014, clicar no valor mediano destaca "mediana do
                   cliente", nao uma operacao (o bug que o verificador ja teve).
 
- [ ] 3.3  Numero nao confirmado marcado em vermelho
+          FEITO 2026-09-26. >>> DECISAO EM ABERTO RESOLVIDA: opcao B <<<
+          O verificador (nivel_2/verificacao_aderencia.py) passou a gravar as
+          MARCAS - posicao de cada valor no texto + classe + fonte - na mesma
+          execucao que classifica. Coluna aderencia.marcas_json (esquema v4->v5,
+          store reconstruido: mesmo 28/30, zero chamada de API). A API so le; a
+          tela so quebra o texto nas posicoes. UM parser, em Python.
+          extrair_valores() manteve o contrato exato (12 testes intocados); a
+          versao com posicao e interna (_extrair_com_posicao).
+          Conferido em formatos reais: BR, US (R$71,297.68), "k" (faixa
+          R$14.3k-R$19.4k vira limiar) e a mediana.
+          ACEITE COM A ARMADILHA PRESENTE: no CLI-014 existe a OP-00127 com o
+          valor EXATO da mediana (R$ 2.308,41, a operacao do meio de 11). Clicar
+          na mediana destaca so "mediana do cliente" - nao a OP-00127.
+          Guarda: teste que falha se aparecer regex de R$ na tela.
+          SEGURANCA: a justificativa e texto de LLM - nada da API entra como
+          HTML (so nos de texto). Guarda: teste que falha com innerHTML/
+          outerHTML/insertAdjacentHTML/document.write no codigo da tela.
+ [x] 3.3  Numero nao confirmado marcado em vermelho
           - valores_nao_encontrados e atipicos_incorretos com marca propria e
             uma frase dizendo POR QUE ("existe na base, mas nao e uma das
             operacoes sinalizadas")
@@ -463,7 +491,13 @@
           ACEITE: CLI-028 com R$ 6.913,84 em vermelho e a explicacao ao lado;
                   CLI-001 (flag ativa, nenhum numero citado) com aviso proprio.
 
- [ ] 3.4  Painel de evidencia lado a lado com o texto
+          FEITO 2026-09-26: CLI-028 com R$6.913,84 em vermelho e aviso fixo
+          dizendo POR QUE (existe - OP-00269 -, mas nao e sinalizada). CLI-001
+          (flag ativa, nada citado) com aviso proprio usando o motivo gravado.
+          Visto no navegador e corrigido: clicar num numero com problema
+          repetia, palavra por palavra, o aviso vermelho logo abaixo. Agora a
+          explicacao ao clicar so aparece para os numeros que conferem.
+ [x] 3.4  Painel de evidencia lado a lado com o texto
           - operacoes do cliente com flag_valor_atipico e
             em_dia_de_fracionamento visiveis
           - sinalizacoes com o detalhe (soma do dia, limite atipico)
@@ -475,7 +509,20 @@
           ACEITE: CLI-014 mostra as 4 versoes do historico, as 3 importadas
                   marcadas como tal.
 
- [ ] 3.5  Pegar / devolver caso pela tela
+          FEITO 2026-09-26: CLI-014 mostra as 4 versoes do historico, as 3
+          importadas marcadas "data inferida" (a copia atual tem data
+          OBSERVADA, a do vinculo - numa trilha de auditoria as duas nao podem
+          parecer iguais). Evidencia com payload null DIZ isso ao analista.
+          Clicar num valor leva a linha de origem (operacao, dia, canal) ou ao
+          agregado (media/mediana/volume). Agregados NAO sao calculados na
+          tela: volume vem do alerta; media/mediana so aparecem quando citadas,
+          com o valor que o verificador conferiu.
+          >>> BUG VISUAL MEDIDO a 1440px <<<
+          A coluna de evidencias (546px) transbordava: a tabela exige 608px e,
+          como item de grid tem min-width:auto, o bloco crescia para fora em vez
+          de a tabela rolar por dentro. Corrigido (minmax(0,1fr) + min-width:0).
+          Conferido tambem: tema claro e escuro, e 400px sem nada alem da borda.
+ [x] 3.5  Pegar / devolver caso pela tela
           - botoes que chamam POST /alertas/{id}/estado com X-Analista
           - nome do analista pedido uma vez e guardado em localStorage
           - 409 mostrado com a mensagem da API (ela ja diz o que era permitido)
@@ -483,6 +530,31 @@
           ACEITE: pegar um caso na tela, recarregar, o dono continua la; dois
                   navegadores tentando pegar o mesmo caso - o segundo ve o 409.
 
+          FEITO 2026-09-26: sem nome = aviso e estado intacto; com nome = caso
+          com o analista; recarregar mantem dono e nome (localStorage com
+          try/catch). Sem botao de concluir - uma nota diz que e a Fase 4.
+          Tela desatualizada (outro analista pegou antes): 409 com "ja esta em
+          analise com bruno.lima" e a tela se atualiza sozinha.
+          >>> BRECHA ENCONTRADA AO PENSAR NO FLUXO: regra nova na API <<<
+          Qualquer analista podia DEVOLVER um caso em analise por outro. Agora
+          so o dono devolve (409 dizendo com quem esta). O compare-and-set
+          passou a incluir o dono lido (`analista_id IS ?`). Nao e controle de
+          acesso (X-Analista e identificacao) - impede interferencia por engano.
+          >>> QUASE FALSO NEGATIVO <<<
+          O primeiro teste no navegador mostrou a Ana devolvendo o caso do Bruno
+          - com a regra ja escrita e os testes da API verdes. O servidor do
+          preview tinha subido ANTES da regra, sem --reload: o navegador estava
+          validando codigo velho. launch.json agora usa --reload, e o fluxo
+          inteiro foi refeito com o servidor reiniciado.
+          Mensagens de 409 passaram a nomear o caso como o analista conhece
+          (CLI-028), nao pelo id interno do alerta.
+
+ ===> FASE 3 CONCLUIDA em 2026-09-26. Suite: 185 testes pytest + 13 do Node
+      (o pytest roda os do Node tambem). <===
+ POLIMENTO ANOTADO (nao bloqueia): as mensagens de erro da API sao ASCII sem
+ acento, como todo o codigo Python do projeto; na tela aparecem como
+ "ja esta em analise". Acentuar e mudanca de contrato (ha testes com a string
+ exata) - fazer de uma vez, junto com a Fase 4.
 -------------------------------------------------------------------------------
  FASE 4 - DECISAO DO ANALISTA E FEEDBACK                   [nao detalhada ainda]
 -------------------------------------------------------------------------------
@@ -526,6 +598,18 @@
  2026-09-12  0.1 concluido. Efeito colateral: conftest.py nao punha a RAIZ no
              sys.path - `from mesa import ...` so funcionava via `python -m
              pytest`. Corrigido; dependencia silenciosa de COMO o teste roda.
+ 2026-09-26  FASE 3 CONCLUIDA (3.0 a 3.5). 185 testes pytest + 13 Node.
+             A tela funciona: o caso CLI-028 da apresentacao, de verdade.
+             Decisao do 3.2 resolvida (verificador grava as posicoes; um parser
+             so). Achados: transbordamento de grid medido a 1440px; brecha de
+             "qualquer um devolve o caso de outro" fechada na API; e um quase
+             falso negativo - o navegador validando um servidor de codigo velho.
+             Todas as guardas novas provadas reintroduzindo o defeito.
+             TAMBEM: a apresentacao (artifact) tinha 3 IDs de operacao e 1
+             mediana INVENTADOS na maquete, sob um rodape que dizia "todos os
+             numeros extraidos das saidas". Achado ao ver o OP-00269 real saindo
+             do verificador. Corrigido (versao 2), citacao agora literal.
+             Nada commitado da Fase 3 ainda.
  2026-09-26  FASE 2 CONCLUIDA (2.0 a 2.6) - sessao com Opus 5.5. 166 testes
              verdes (+45). API FastAPI sobre o store, 7 rotas, sem calculo de
              regra. Dois achados que valem a sessao:
