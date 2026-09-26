@@ -253,14 +253,34 @@
      409 transicao de estado invalida) - nunca 200 com corpo de erro dentro
    - a API abre UMA conexao por request (SQLite + WAL aguenta; ver mesa/db.py)
 
- [ ] 2.0  mesa/api.py - app FastAPI + dependencia de conexao + CORS local
+ [x] 2.0  mesa/api.py - app FastAPI + dependencia de conexao + CORS local
           - `uvicorn mesa.api:app --reload`; servico no docker-compose
           - fastapi + uvicorn fixados no requirements.txt (a versao importa:
             ver a licao do pacote mcp 1.x -> 2.x em REPRODUTIBILIDADE.md)
           ACEITE: GET /saude devolve 200 com versao do esquema e contagens
                   (operacoes, alertas, pareceres) - prova que a API le o store.
 
- [ ] 2.1  GET /fila
+          FEITO 2026-09-26: fastapi 0.141.1 fixado (+ uvicorn e httpx, que ja
+          vinham transitivos do mcp mas agora sao dependencia DIRETA). Instalar
+          nao moveu starlette nem pydantic - conferido com --dry-run antes.
+          Servico `api` no compose, porta publicada SO em 127.0.0.1 do host.
+          /saude responde versao 4, 317 operacoes, 30 alertas, 80 pareceres.
+          A API RECUSA (503) store inexistente em vez de deixar conectar() criar
+          um banco vazio - a tela mostraria "0 casos" como se fosse verdade.
+          E confere a versao do esquema sem aplicar: um GET nao escreve (testado:
+          o arquivo sai byte a byte intocado depois de 4 rotas de leitura).
+
+          >>> BUG REAL MEDIDO: 93% das requisicoes concorrentes davam 500 <<<
+          O FastAPI abre a conexao numa thread do pool, roda o endpoint em outra
+          e fecha numa terceira; o sqlite3 recusa isso por padrao. O TestClient
+          SEQUENCIAL passou - daria falsa confianca. Um uvicorn real com 300
+          requisicoes concorrentes: 278 deram 500. Correcao: conectar() ganhou
+          check_same_thread (so a API desliga; cada requisicao tem conexao
+          propria, que troca de thread mas nunca e usada por duas ao mesmo tempo).
+          Regressao: test_leituras_concorrentes_nao_quebram sobe um uvicorn de
+          verdade. PROVADO QUE MORDE: reintroduzido o bug, o teste da exatamente
+          {200: 22, 500: 278}.
+ [x] 2.1  GET /fila
           Query: ?estado=novo|triado|em_analise|concluido (default: todos)
                  ?origem=regra|controle  (default: regra - a fila do ANALISTA
                                           nao mostra caso sem sinalizacao)
@@ -276,7 +296,16 @@
           ACEITE: ordem identica a ranking_clientes_sinalizados(); 17 itens com
                   origem=regra e 30 com origem=todos.
 
- [ ] 2.2  GET /alertas/{id}
+          FEITO 2026-09-26: ordem identica ao ranking; 17 / 30 / 13 conferidos.
+          `concorda` reproduz os 23/30 do confronto_resumo.json e `fundamentado`
+          os 28/30 - a API REUSA _normalizar_nivel() do confronto.py.
+          Sem parecer: concorda/fundamentado/nivel_risco_agente = null (testado
+          contra um store sem triagem).
+          DECISAO: cursor por CHAVE (a tripla de ordenacao), nao por offset. A
+          fila muda enquanto e lida; com offset, um caso pego por outro analista
+          entre duas paginas desloca tudo e um item e PULADO. Ha teste que muda
+          o estado de um caso entre a pagina 1 e a 2 e confere que nada se perde.
+ [x] 2.2  GET /alertas/{id}
           Caso completo, o que a tela precisa numa requisicao so:
           {alerta: {...}, sinalizacoes: [{regra, operacao_id, data, detalhe}],
            parecer: {nivel_risco, tipologia_suspeita, red_flags[], justificativa,
@@ -292,12 +321,32 @@
           ACEITE: 404 em alerta inexistente; um caso com fracionamento traz a
                   sinalizacao com a data que disparou.
 
- [ ] 2.3  GET /alertas/{id}/evidencias
+          FEITO 2026-09-26: 404 com {detail} exato; caso de fracionamento traz as
+          datas que dispararam (conferidas contra datas_fracionamento_do_store).
+          As marcas das operacoes vem de `sinalizacoes` GRAVADAS, nao de recalculo
+          - testado que coincidem uma a uma.
+          O caso CLI-028 da apresentacao sai completo da API: aderencia false,
+          atipicos_incorretos=[6913.84], e a operacao citada com flag false.
+          ACRESCIMOS ao spec (baratos, e a Fase 3 precisa):
+            - operacoes[].em_dia_de_fracionamento (idem, vindo de sinalizacoes)
+            - historico_parecer[] com origem_registro e reaproveitado_de: sem
+              eles, um parecer importado (timestamp INFERIDO) seria
+              indistinguivel de um gerado (timestamp OBSERVADO) - a distincao
+              que a Fase 1 fez questao de gravar.
+          Operacao sem data vai para o FIM (o SQLite poe NULL no topo em ASC).
+ [x] 2.3  GET /alertas/{id}/evidencias
           [{ordem, tool, args, payload}] - o payload como o AGENTE viu.
           ACEITE: alerta reaproveitado tambem devolve evidencia (a copia carrega
                   as linhas junto - ver 1.5); alerta sem parecer devolve [].
 
- [ ] 2.4  POST /alertas/{id}/estado   {estado, analista_id}
+          FEITO 2026-09-26: alerta reaproveitado devolve a evidencia copiada no
+          passo 1.5; alerta sem parecer devolve [] (existe, so nao foi triado -
+          404 fica para o que nao existe).
+          FATO DO HISTORICO, NAO BUG: as evidencias importadas tem payload null.
+          O cache antigo nunca guardou o retorno das ferramentas (so a partir do
+          1.4). A API devolve null em vez de inventar - e a tela vai precisar
+          dizer isso ao analista (ver 3.4).
+ [x] 2.4  POST /alertas/{id}/estado   {estado, analista_id}
           Transicoes permitidas (as unicas):
             novo       -> em_analise        (analista pegou o caso)
             triado     -> em_analise
@@ -308,7 +357,27 @@
             'novo'; a API nao duplica esse caminho
           ACEITE: novo->concluido devolve 409 e NAO altera o estado.
 
- [ ] 2.5  Identificacao do analista
+          FEITO 2026-09-26: novo->concluido = 409 e estado intacto.
+          >>> DUAS AMBIGUIDADES DO SPEC, resolvidas antes de codar <<<
+          (a) 2.4 pedia analista_id no CORPO; 2.5 pedia no header X-Analista.
+              Duas fontes para o mesmo fato. Fica so o header; o corpo leva so
+              {estado}.
+          (b) em_analise->concluido estava na lista de permitidas, mas anotado
+              "so via Fase 4, com decisao junto". Liberar agora permitiria
+              fechar um caso sem registro do que o analista decidiu. Nesta fase
+              devolve 409 dizendo que exige a Fase 4. A Fase 4 abre a transicao
+              JUNTO com a tabela decisoes, nunca antes.
+          DECISAO DE CONCORRENCIA (nao estava no spec): dois analistas clicando
+          "pegar caso" ao mesmo tempo. UPDATE ... WHERE id=? AND estado=<lido>
+          (compare-and-set) - o banco garante que so um vence.
+          >>> ACHADO: o teste de corrida por carga e PROBABILISTICO <<<
+          Reintroduzido o UPDATE sem condicao, o teste com 20 analistas
+          simultaneos falhou em 2 de 3 execucoes - PASSOU na terceira com o bug
+          presente. Detector que falha 1 vez em 3 nao protege. Criado um teste
+          DETERMINISTICO que forca a intercalacao exata (le 'triado', outro
+          analista escreve no meio, entao o UPDATE roda): falha 3 de 3 com o bug,
+          passa com a correcao. O de carga ficou, declarado como probabilistico.
+ [x] 2.5  Identificacao do analista
           - header X-Analista (string) por enquanto; sem senha, sem sessao
           - obrigatorio em 2.4, ignorado nos GETs
           - RAZAO de nao fazer auth de verdade agora: autenticacao mal feita e
@@ -317,27 +386,113 @@
             da maquina, nunca antes.
           ACEITE: POST sem X-Analista devolve 400; com header, grava analista_id.
 
- [ ] 2.6  GET /execucoes  e  GET /execucoes/{id}
+          FEITO 2026-09-26: sem header = 400; header em branco = 400; GETs nao
+          exigem. Pegar o caso grava o analista; devolver para a fila libera.
+          Caso ja em_analise nao pode ser pego por outro (409) - sem isso, um
+          segundo analista "roubaria" o caso em silencio.
+ [x] 2.6  GET /execucoes  e  GET /execucoes/{id}
           Lista as execucoes de regras com parametros_json e contagens.
           Existe para a pergunta de auditoria: "com que limiar este alerta
           nasceu?" - o passo 0.5 gravou o dado, aqui ele fica alcancavel.
           ACEITE: devolve os parametros da execucao, nao os do codigo atual.
 
+          FEITO 2026-09-26: roda uma 2a execucao com atipico_fator=10 e a API
+          devolve [10, 5] - o que cada execucao USOU, nao o PARAMETROS_REGRAS
+          de hoje. Traz tambem alertas_regra/alertas_controle por execucao.
+
+ ===> FASE 2 CONCLUIDA em 2026-09-26. Suite: 166 testes verdes (+45). <===
+ Comando validado fora dos testes: `uvicorn mesa.api:app` sobe com as 7 rotas
+ e o /docs interativo (OpenAPI gerado dos modelos Pydantic - os modelos SAO o
+ contrato que a Fase 3 consome).
 -------------------------------------------------------------------------------
- FASE 3 - TELA DE CASO (o diferencial)                     [detalhar na Fase 2]
+ FASE 3 - TELA DE CASO (o diferencial)
  STACK DECIDIDA (2026-09-12): JavaScript VANILLA. Sem framework, sem build step,
  sem node_modules. HTML + CSS + fetch() contra a API da Fase 2. A tela e uma
  fila e um painel de caso - nao ha estado de UI que justifique React aqui, e
- zero build combina com o resto do projeto (3.600 linhas, nada superfluo).
+ zero build combina com o resto do projeto.
+ Portao: o caso CLI-028 renderizado com o R$ 6.913,84 marcado em vermelho e a
+ operacao-fonte ao lado - o slide da apresentacao, funcionando de verdade.
 -------------------------------------------------------------------------------
+ Convencoes de toda a fase:
+   - a tela NAO calcula regra nenhuma: tudo que ela marca vem da API, que vem
+     do store. Formatar "R$ 1.234,56" e a UNICA transformacao permitida aqui
+     (Intl.NumberFormat('pt-BR'), nunca string montada a mao)
+   - servida pela PROPRIA API (StaticFiles em /app) - mesma origem, sem CORS,
+     sem um segundo servidor para subir. O CORS da Fase 2 continua para quem
+     preferir abrir o HTML de outro lugar
+   - arquivos: mesa/web/index.html, mesa/web/app.js, mesa/web/estilo.css
+   - sem dependencia externa em runtime (nada de CDN): a ferramenta tem que
+     abrir numa rede de banco sem internet
+   - testes: a logica pura de app.js (ligar numero -> operacao) em funcoes
+     exportaveis, testadas com node --test SE node existir na maquina; a
+     integracao tela+API conferida no navegador do app (Browser pane)
+
+ [ ] 3.0  API serve a tela: StaticFiles em /app + redirect de / para /app
+          ACEITE: GET /app devolve o index.html; /docs e as rotas da Fase 2
+                  continuam intactas (os 45 testes da API seguem verdes).
+
  [ ] 3.1  Fila navegavel
- [ ] 3.2  Parecer com CADA numero linkado a sua operacao-fonte
- [ ] 3.3  Numero nao confirmado pela aderencia marcado em vermelho
+          - consome GET /fila; filtros de estado e origem na propria tela
+          - cada linha: cliente, nivel regra x agente, chip de concorda/diverge,
+            chip de fundamentado, estado, dono
+          - "ainda nao triado" com visual PROPRIO, distinto de "diverge" - a
+            mesma distincao que a API faz com null (2.1)
+          - paginacao pelo proximo_cursor, nunca por numero de pagina
+          ACEITE: 17 linhas na ordem do ranking; trocar para "todos" mostra 30.
+
+ [ ] 3.2  Parecer com CADA numero ligado a sua operacao-fonte
+          - o texto da justificativa e percorrido e cada valor em R$ vira um
+            elemento clicavel que destaca a operacao/agregado correspondente
+          - a CORRESPONDENCIA vem de aderencia.valores_confirmados (que ja traz
+            {valor, fonte}) - a tela NAO reimplementa o regex do verificador.
+            Se precisar localizar o valor no texto, usa o numero ja confirmado
+            pela API, nao uma extracao propria
+          RISCO CONHECIDO: o verificador aceita formatos BR, US, "k" e "BRL"
+          (verificacao_aderencia.py). Localizar esses formatos no texto na tela
+          e uma segunda implementacao do parser. Alternativa a decidir no 3.2:
+          a API devolver as POSICOES (inicio/fim) de cada valor no texto, ja
+          calculadas pelo verificador - um parser so, em Python.
+          ACEITE: no CLI-014, clicar no valor mediano destaca "mediana do
+                  cliente", nao uma operacao (o bug que o verificador ja teve).
+
+ [ ] 3.3  Numero nao confirmado marcado em vermelho
+          - valores_nao_encontrados e atipicos_incorretos com marca propria e
+            uma frase dizendo POR QUE ("existe na base, mas nao e uma das
+            operacoes sinalizadas")
+          - a marca nao esconde o parecer: principio 2 do roadmap
+          ACEITE: CLI-028 com R$ 6.913,84 em vermelho e a explicacao ao lado;
+                  CLI-001 (flag ativa, nenhum numero citado) com aviso proprio.
+
  [ ] 3.4  Painel de evidencia lado a lado com o texto
+          - operacoes do cliente com flag_valor_atipico e
+            em_dia_de_fracionamento visiveis
+          - sinalizacoes com o detalhe (soma do dia, limite atipico)
+          - evidencias das ferramentas; quando o payload e null (pareceres
+            importados, anteriores ao passo 1.4), DIZER isso em vez de mostrar
+            vazio: "o registro deste parecer nao guardou o retorno das
+            ferramentas"
+          - historico_parecer com importado x gerado distinguiveis
+          ACEITE: CLI-014 mostra as 4 versoes do historico, as 3 importadas
+                  marcadas como tal.
+
+ [ ] 3.5  Pegar / devolver caso pela tela
+          - botoes que chamam POST /alertas/{id}/estado com X-Analista
+          - nome do analista pedido uma vez e guardado em localStorage
+          - 409 mostrado com a mensagem da API (ela ja diz o que era permitido)
+          - SEM botao de concluir: isso e Fase 4
+          ACEITE: pegar um caso na tela, recarregar, o dono continua la; dois
+                  navegadores tentando pegar o mesmo caso - o segundo ve o 409.
 
 -------------------------------------------------------------------------------
  FASE 4 - DECISAO DO ANALISTA E FEEDBACK                   [nao detalhada ainda]
 -------------------------------------------------------------------------------
+ OBSERVADO NA FASE 2 (entra no desenho da 4):
+   - hoje so o analista ATUAL fica gravado (alertas.analista_id). Quem pegou o
+     caso antes, e quando, se perde ao devolver para a fila. Para compliance,
+     a trilha de transicoes (quem, de que estado, para qual, quando) deve ser
+     append-only como os pareceres - tabela `transicoes`, junto com `decisoes`
+   - a transicao em_analise->concluido foi deixada FECHADA de proposito (2.4).
+     A 4.1 a abre, e so junto com a decisao gravada na mesma transacao
  [ ] 4.1  Tabela decisoes + registro (concordo / discordo+motivo / escalar)
  [ ] 4.2  Metrica agente-vs-humano (substitui regra-vs-agente como metrica-mor)
  [ ] 4.3  Tempo de analise economizado por caso
@@ -371,6 +526,17 @@
  2026-09-12  0.1 concluido. Efeito colateral: conftest.py nao punha a RAIZ no
              sys.path - `from mesa import ...` so funcionava via `python -m
              pytest`. Corrigido; dependencia silenciosa de COMO o teste roda.
+ 2026-09-26  FASE 2 CONCLUIDA (2.0 a 2.6) - sessao com Opus 5.5. 166 testes
+             verdes (+45). API FastAPI sobre o store, 7 rotas, sem calculo de
+             regra. Dois achados que valem a sessao:
+             (1) bug real: 278/300 requisicoes concorrentes davam 500 (threads x
+                 sqlite3), invisivel no TestClient sequencial;
+             (2) o teste de corrida por carga pegava o bug so 2 vezes em 3 -
+                 substituido como protecao por um teste deterministico.
+             Nos dois casos o teste foi PROVADO reintroduzindo o bug.
+             Duas ambiguidades do spec resolvidas e registradas no 2.4.
+             Fase 3 detalhada (3.0 a 3.5). Observacoes para a Fase 4 anotadas.
+             Nada commitado ainda - aguardando o Felipe.
  2026-09-12  outputs/pareceres_lote.json REGERADO do store (decisao do Felipe):
              aderencia 21/30 -> 28/30, nenhum outro campo mudou. Ao regerar,
              apareceu um BUG do proprio exportar: com o store sem linha de custo
