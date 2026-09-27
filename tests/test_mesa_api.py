@@ -10,6 +10,7 @@ servidor real sob carga deu 500 em 278 de 300 requisicoes. Teste que nao
 exercita a condicao do defeito nao protege contra ele.
 """
 import concurrent.futures
+import sqlite3
 import shutil
 import socket
 import threading
@@ -121,7 +122,8 @@ def test_esquema_de_outra_versao_devolve_503(cliente, monkeypatch):
     monkeypatch.setattr(db, "VERSAO_ESQUEMA", db.VERSAO_ESQUEMA + 1)
     r = cliente.get("/saude")
     assert r.status_code == 503
-    assert "versao de esquema" in r.json()["detail"]
+    assert "versão de esquema" in r.json()["detail"]
+    assert "python -m mesa.db" in r.json()["detail"]  # aponta a migracao (4.0)
 
 
 def test_leitura_nao_escreve_no_store(cliente):
@@ -260,7 +262,7 @@ def test_alerta_inexistente_e_404(cliente):
     """<<< aceite do 2.2 >>>"""
     r = cliente.get("/alertas/99999")
     assert r.status_code == 404
-    assert r.json() == {"detail": "alerta 99999 nao existe"}
+    assert r.json() == {"detail": "alerta 99999 não existe"}
 
 
 def test_caso_com_fracionamento_traz_a_data_que_disparou(cliente):
@@ -387,16 +389,16 @@ def test_novo_para_concluido_e_409_e_nao_altera_o_estado(cliente_novo):
     assert _estado(cliente_novo, aid)["estado"] == "novo"
 
 
-def test_concluir_exige_a_fase_4_mesmo_vindo_de_em_analise(cliente):
-    """Ambiguidade do ROADMAP resolvida: em_analise -> concluido estava listada
-    como permitida, mas 'so via Fase 4, com decisao junto'. Liberar agora
-    permitiria fechar um caso sem registro do que o analista decidiu."""
+def test_estado_nao_conclui_caso_nem_vindo_de_em_analise(cliente):
+    """Ambiguidade do ROADMAP resolvida na 2.4, e mantida na Fase 4: concluir so
+    pelo POST /decisao, que grava a decisao junto. Pelo /estado, fecharia um
+    caso sem registro do que o analista decidiu."""
     aid = _alerta_de(cliente, "CLI-014")
     assert _mudar(cliente, aid, "em_analise").status_code == 200
 
     r = _mudar(cliente, aid, "concluido")
     assert r.status_code == 409
-    assert "Fase 4" in r.json()["detail"]
+    assert f"/alertas/{aid}/decisao" in r.json()["detail"]
     assert _estado(cliente, aid)["estado"] == "em_analise"
 
 
@@ -430,7 +432,7 @@ def test_caso_ja_em_analise_nao_pode_ser_pego_de_novo(cliente):
     assert r.status_code == 409
     # a mensagem diz QUEM pegou - e o que o analista com a tela desatualizada
     # precisa saber, nao o nome tecnico da transicao
-    assert r.json()["detail"] == "o caso CLI-014 ja esta em analise com ana"
+    assert r.json()["detail"] == "o caso CLI-014 já está em análise com ana"
     assert _estado(cliente, aid)["analista_id"] == "ana"
 
 
@@ -667,3 +669,400 @@ def test_transicoes_permitidas_seguem_a_mesma_tabela_do_post(cliente):
     for destino in cliente.get(f"/alertas/{aid}").json()["transicoes_permitidas"]:
         assert _mudar(cliente, aid, destino).status_code == 200
 
+
+
+# ============================================================================
+# Fase 4.1 - decisao do analista e trilha de transicoes
+# ============================================================================
+
+
+def _decidir(cliente, alerta_id, decisao, analista="ana", parecer_id="atual", **extra):
+    if parecer_id == "atual":
+        parecer = cliente.get(f"/alertas/{alerta_id}").json()["parecer"]
+        parecer_id = parecer["parecer_id"] if parecer else None
+    headers = {"X-Analista": analista} if analista is not None else {}
+    corpo = {"decisao": decisao, "parecer_id": parecer_id, **extra}
+    return cliente.post(f"/alertas/{alerta_id}/decisao", json=corpo, headers=headers)
+
+
+def _trilha(cliente, alerta_id):
+    return [(t["estado_anterior"], t["estado_novo"], t["ator"])
+            for t in cliente.get(f"/alertas/{alerta_id}").json()["trilha"]]
+
+
+def test_discordar_com_motivo_conclui_o_caso_com_decisao_e_trilha(cliente):
+    """<<< aceite do 4.1 (lado da API) >>> CLI-028: o parecer cita R$6.913,84
+    como atipico, e nao e. O analista discorda - e isso fica registrado."""
+    aid = _alerta_de(cliente, "CLI-028")
+    assert _mudar(cliente, aid, "em_analise").status_code == 200
+
+    r = _decidir(cliente, aid, "discordo", nivel_risco="alto",
+                 motivo="parecer cita OP-00269 como atipica; nao e")
+    assert r.status_code == 200, r.json()
+
+    caso = cliente.get(f"/alertas/{aid}").json()
+    assert caso["alerta"]["estado"] == "concluido"
+    assert caso["alerta"]["decisao"] == "discordo"
+    d = caso["decisao"]
+    assert (d["decisao"], d["analista_id"], d["nivel_risco_analista"]) == ("discordo", "ana", "alto")
+    assert d["parecer_id"] == caso["parecer"]["parecer_id"]
+    assert d["nivel_risco_agente"] == caso["parecer"]["nivel_risco"]
+    assert _trilha(cliente, aid) == [
+        ("novo", "triado", "sistema:triagem"),
+        ("triado", "em_analise", "ana"),
+        ("em_analise", "concluido", "ana"),
+    ]
+    assert caso["transicoes_permitidas"] == []  # concluido e terminal
+    fila = cliente.get("/fila?estado=concluido").json()["itens"]
+    assert [(i["cliente_id"], i["decisao"]) for i in fila] == [("CLI-028", "discordo")]
+
+
+def test_concordar_grava_o_nivel_do_agente(cliente):
+    aid = _alerta_de(cliente, "CLI-014")
+    _mudar(cliente, aid, "em_analise")
+    agente_nivel = cliente.get(f"/alertas/{aid}").json()["parecer"]["nivel_risco"]
+
+    r = _decidir(cliente, aid, "concordo")
+    assert r.status_code == 200
+    assert r.json()["nivel_risco_analista"] == agente_nivel == r.json()["nivel_risco_agente"]
+
+
+def test_concordar_com_nivel_diferente_do_agente_e_422(cliente):
+    """'Concordo, mas o nivel e outro' e uma discordancia - tem que ter motivo."""
+    aid = _alerta_de(cliente, "CLI-014")
+    _mudar(cliente, aid, "em_analise")
+    agente_nivel = cliente.get(f"/alertas/{aid}").json()["parecer"]["nivel_risco"]
+    outro = next(n for n in ("baixo", "médio", "alto") if n != agente_nivel)
+
+    r = _decidir(cliente, aid, "concordo", nivel_risco=outro)
+    assert r.status_code == 422
+    assert "discordo" in r.json()["detail"]
+    assert _estado(cliente, aid)["estado"] == "em_analise"
+
+
+def test_concordar_sem_parecer_e_422(cliente_novo):
+    """<<< aceite do 4.1 >>> Caso pego antes da triagem: nao ha com que concordar."""
+    aid = _alerta_de(cliente_novo, "CLI-014")
+    _mudar(cliente_novo, aid, "em_analise")
+    r = _decidir(cliente_novo, aid, "concordo", parecer_id=None)
+    assert r.status_code == 422
+    assert _estado(cliente_novo, aid)["estado"] == "em_analise"
+
+
+def test_caso_sem_parecer_pode_ser_decidido_discordando(cliente_novo):
+    """O LLM falhar (ou nao ter rodado) nao pode travar o analista."""
+    aid = _alerta_de(cliente_novo, "CLI-014")
+    _mudar(cliente_novo, aid, "em_analise")
+    r = _decidir(cliente_novo, aid, "discordo", parecer_id=None,
+                 nivel_risco="alto", motivo="fracionamento evidente nas operacoes")
+    assert r.status_code == 200
+    assert (r.json()["parecer_id"], r.json()["nivel_risco_agente"]) == (None, None)
+
+
+def test_outro_analista_nao_decide_o_caso(cliente):
+    """<<< aceite do 4.1 >>>"""
+    aid = _alerta_de(cliente, "CLI-014")
+    _mudar(cliente, aid, "em_analise", analista="ana")
+    r = _decidir(cliente, aid, "escalar", analista="bruno", motivo="grave")
+    assert r.status_code == 409
+    assert "ana" in r.json()["detail"]
+    assert _estado(cliente, aid)["estado"] == "em_analise"
+    assert cliente.get(f"/alertas/{aid}").json()["decisao"] is None
+
+
+@pytest.mark.parametrize("corpo,trecho", [
+    ({"decisao": "discordo", "nivel_risco": "alto"}, "motivo"),
+    ({"decisao": "discordo", "motivo": "x"}, "nível"),
+    ({"decisao": "discordo", "nivel_risco": "alto", "motivo": "   "}, "motivo"),
+    ({"decisao": "escalar"}, "motivo"),
+    ({"decisao": "discordo", "nivel_risco": "altíssimo", "motivo": "x"}, "inválido"),
+])
+def test_corpo_invalido_para_a_decisao_e_422(cliente, corpo, trecho):
+    aid = _alerta_de(cliente, "CLI-014")
+    _mudar(cliente, aid, "em_analise")
+    r = _decidir(cliente, aid, **corpo)
+    assert r.status_code == 422
+    assert trecho in r.json()["detail"]
+    assert _estado(cliente, aid)["estado"] == "em_analise"
+
+
+def test_decisao_desconhecida_e_422(cliente):
+    aid = _alerta_de(cliente, "CLI-014")
+    _mudar(cliente, aid, "em_analise")
+    assert _decidir(cliente, aid, "arquivar").status_code == 422
+
+
+def test_nivel_sem_acento_e_normalizado(cliente):
+    aid = _alerta_de(cliente, "CLI-014")
+    _mudar(cliente, aid, "em_analise")
+    r = _decidir(cliente, aid, "discordo", nivel_risco="Medio", motivo="x")
+    assert r.status_code == 200
+    assert r.json()["nivel_risco_analista"] == "médio"
+
+
+def test_escalar_sem_nivel_e_aceito(cliente):
+    aid = _alerta_de(cliente, "CLI-014")
+    _mudar(cliente, aid, "em_analise")
+    r = _decidir(cliente, aid, "escalar", motivo="contraparte recorrente em outros casos")
+    assert r.status_code == 200
+    assert r.json()["nivel_risco_analista"] is None
+
+
+def test_parecer_diferente_do_que_o_analista_viu_e_409(cliente):
+    """A decisao grava o parecer VISTO. Se o atual e outro, o analista decidiu
+    sobre algo que nao leu."""
+    aid = _alerta_de(cliente, "CLI-014")
+    _mudar(cliente, aid, "em_analise")
+    atual = cliente.get(f"/alertas/{aid}").json()["parecer"]["parecer_id"]
+    r = _decidir(cliente, aid, "concordo", parecer_id=atual - 1)
+    assert r.status_code == 409
+    assert "parecer" in r.json()["detail"]
+
+
+def test_parecer_id_e_obrigatorio_no_corpo(cliente):
+    aid = _alerta_de(cliente, "CLI-014")
+    _mudar(cliente, aid, "em_analise")
+    r = cliente.post(f"/alertas/{aid}/decisao", json={"decisao": "escalar", "motivo": "x"},
+                     headers={"X-Analista": "ana"})
+    assert r.status_code == 422
+
+
+def test_caso_que_ninguem_pegou_nao_e_decidido(cliente):
+    aid = _alerta_de(cliente, "CLI-014")
+    r = _decidir(cliente, aid, "escalar", motivo="x")
+    assert r.status_code == 409
+    assert "pegue o caso" in r.json()["detail"]
+
+
+def test_caso_decidido_nao_e_decidido_de_novo(cliente):
+    aid = _alerta_de(cliente, "CLI-014")
+    _mudar(cliente, aid, "em_analise")
+    assert _decidir(cliente, aid, "escalar", motivo="x").status_code == 200
+    r = _decidir(cliente, aid, "concordo")
+    assert r.status_code == 409
+    assert "já foi decidido" in r.json()["detail"]
+    # e nao volta para a fila pelo /estado
+    assert _mudar(cliente, aid, "triado").status_code == 409
+
+
+def test_decidir_sem_x_analista_e_400(cliente):
+    aid = _alerta_de(cliente, "CLI-014")
+    _mudar(cliente, aid, "em_analise")
+    assert _decidir(cliente, aid, "escalar", analista=None, motivo="x").status_code == 400
+
+
+def test_falha_no_meio_da_decisao_nao_deixa_nada_gravado(cliente, monkeypatch):
+    """<<< aceite do 4.1 >>> A trilha falha DEPOIS de o estado mudar e a decisao
+    ser inserida. Com as tres escritas na mesma transacao, nada fica: o caso
+    continua em analise, sem decisao - nao existe caso concluido sem registro."""
+    aid = _alerta_de(cliente, "CLI-014")
+    _mudar(cliente, aid, "em_analise")
+    trilha_antes = _trilha(cliente, aid)
+
+    def trilha_que_falha(*args, **kwargs):
+        raise sqlite3.OperationalError("disco cheio simulado")
+
+    registrar_original = api._registrar_transicao
+    monkeypatch.setattr(api, "_registrar_transicao", trilha_que_falha)
+    r = TestClient(api.app, raise_server_exceptions=False).post(
+        f"/alertas/{aid}/decisao",
+        json={"decisao": "escalar", "motivo": "x",
+              "parecer_id": cliente.get(f"/alertas/{aid}").json()["parecer"]["parecer_id"]},
+        headers={"X-Analista": "ana"},
+    )
+    # NAO monkeypatch.undo(): desfaria tambem o CAMINHO_PADRAO do store de teste
+    monkeypatch.setattr(api, "_registrar_transicao", registrar_original)
+    assert r.status_code == 500
+
+    caso = cliente.get(f"/alertas/{aid}").json()
+    assert (caso["alerta"]["estado"], caso["alerta"]["analista_id"]) == ("em_analise", "ana")
+    assert caso["decisao"] is None
+    assert _trilha(cliente, aid) == trilha_antes
+
+
+def test_decisao_duplicada_na_corrida_e_409(cliente, monkeypatch):
+    """Mesmo analista, duas abas, dois cliques: entre a leitura e a escrita da
+    primeira requisicao, a segunda ja concluiu o caso."""
+    aid = _alerta_de(cliente, "CLI-014")
+    _mudar(cliente, aid, "em_analise")
+    parecer_id = cliente.get(f"/alertas/{aid}").json()["parecer"]["parecer_id"]
+    ler_original = api._alerta_ou_404
+
+    def ler_e_deixar_a_outra_aba_concluir(conn, alerta_id):
+        linha = ler_original(conn, alerta_id)  # le em_analise
+        outra = db.conectar(db.CAMINHO_PADRAO)
+        outra.execute("UPDATE alertas SET estado='concluido' WHERE id = ?", (alerta_id,))
+        outra.execute("INSERT INTO decisoes (alerta_id, parecer_id, analista_id, decisao, motivo, "
+                      "decidido_em) VALUES (?, ?, 'ana', 'escalar', 'primeira aba', 'x')",
+                      (alerta_id, parecer_id))
+        outra.commit()
+        outra.close()
+        return linha
+
+    monkeypatch.setattr(api, "_alerta_ou_404", ler_e_deixar_a_outra_aba_concluir)
+    r = _decidir(cliente, aid, "escalar", parecer_id=parecer_id, motivo="segunda aba")
+    monkeypatch.setattr(api, "_alerta_ou_404", ler_original)
+
+    assert r.status_code == 409
+    assert cliente.get(f"/alertas/{aid}").json()["decisao"]["motivo"] == "primeira aba"
+
+
+def test_pegar_e_devolver_ficam_na_trilha(cliente):
+    """<<< o que a Fase 2 observou >>> Antes, quem pegou e devolveu sumia."""
+    aid = _alerta_de(cliente, "CLI-014")
+    _mudar(cliente, aid, "em_analise", analista="ana")
+    _mudar(cliente, aid, "triado", analista="ana")
+    _mudar(cliente, aid, "em_analise", analista="bruno")
+    assert _trilha(cliente, aid) == [
+        ("novo", "triado", "sistema:triagem"),
+        ("triado", "em_analise", "ana"),
+        ("em_analise", "triado", "ana"),
+        ("triado", "em_analise", "bruno"),
+    ]
+
+
+def test_transicao_recusada_nao_entra_na_trilha(cliente):
+    aid = _alerta_de(cliente, "CLI-014")
+    _mudar(cliente, aid, "em_analise", analista="ana")
+    antes = _trilha(cliente, aid)
+    assert _mudar(cliente, aid, "em_analise", analista="bruno").status_code == 409
+    assert _mudar(cliente, aid, "triado", analista="bruno").status_code == 409
+    assert _trilha(cliente, aid) == antes
+
+
+# ============================================================================
+# Fase 4.2 / 4.3 - metricas
+# ============================================================================
+
+
+def test_sem_decisao_as_metricas_sao_null_e_nao_zero(cliente):
+    """<<< aceite do 4.2 >>> "Ninguem decidiu nada" nao e "0% de concordancia"."""
+    m = cliente.get("/metricas").json()
+    assert m["decididos"] == 0
+    assert m["agente_vs_analista"]["concordancia"] is None
+    assert m["agente_vs_analista"]["aceitacao_do_parecer"] is None
+    assert m["aderencia_vs_decisao"]["nao_fundamentado"]["taxa_de_rejeicao"] is None
+    assert m["tempo"]["mediana_s"] is None
+    # a matriz vem completa mesmo vazia: celula zerada e informacao
+    assert m["agente_vs_analista"]["matriz"]["alto"] == {"baixo": 0, "médio": 0, "alto": 0}
+
+
+def test_metricas_de_decisoes_fabricadas_conferidas_a_mao(cliente):
+    """<<< aceite do 4.2 >>> Cinco decisoes sobre casos reais, numeros esperados
+    calculados a mao ANTES de rodar:
+
+      caso     regra  agente  fund.  decisao                -> analista
+      CLI-014  alto   medio   sim    concordo               -> medio
+      CLI-028  alto   medio   NAO    discordo               -> alto
+      CLI-001  alto   alto    NAO    escalar (sem nivel)    -> -
+      CLI-021  medio  alto    sim    discordo               -> medio
+      CLI-011  baixo  baixo   sim    concordo               -> baixo
+    """
+    def fechar(cliente_id, decisao, **extra):
+        aid = _alerta_de(cliente, cliente_id)
+        assert _mudar(cliente, aid, "em_analise").status_code == 200
+        r = _decidir(cliente, aid, decisao, **extra)
+        assert r.status_code == 200, r.json()
+
+    fechar("CLI-014", "concordo")
+    fechar("CLI-028", "discordo", nivel_risco="alto", motivo="OP-00269 nao e atipica")
+    fechar("CLI-001", "escalar", motivo="parecer sem numero nenhum")
+    fechar("CLI-021", "discordo", nivel_risco="médio", motivo="uma atipica so")
+    fechar("CLI-011", "concordo")
+
+    m = cliente.get("/metricas").json()
+    assert (m["casos"], m["decididos"]) == (30, 5)
+    assert m["por_decisao"] == {"concordo": 2, "discordo": 2, "escalar": 1}
+
+    av = m["agente_vs_analista"]
+    # CLI-001 fica fora: escalou sem nivel. Iguais: CLI-014 e CLI-011 -> 2/4
+    assert (av["comparaveis"], av["concordancia"]) == (4, 0.5)
+    assert (av["decididos_com_parecer"], av["aceitacao_do_parecer"]) == (5, 0.4)
+    assert av["matriz"]["médio"] == {"baixo": 0, "médio": 1, "alto": 1}
+    assert av["matriz"]["alto"] == {"baixo": 0, "médio": 1, "alto": 0}
+    assert av["matriz"]["baixo"] == {"baixo": 1, "médio": 0, "alto": 0}
+
+    # regra x analista: 014 (alto/medio) x, 028 (alto/alto) ok, 021 (medio/medio) ok,
+    # 011 ok -> 3/4. regra x agente, nos mesmos 5: so 001 e 011 batem -> 2/5
+    assert (m["regra_vs_analista"]["comparaveis"], m["regra_vs_analista"]["concordancia"]) == (4, 0.75)
+    assert (m["regra_vs_agente"]["comparaveis"], m["regra_vs_agente"]["concordancia"]) == (5, 0.4)
+
+    # o verificador: os 2 pareceres nao fundamentados foram ambos rejeitados;
+    # dos 3 fundamentados, 1 (CLI-021)
+    ad = m["aderencia_vs_decisao"]
+    assert ad["nao_fundamentado"] == {"decididos": 2, "concordo": 0, "discordo": 1,
+                                      "escalar": 1, "taxa_de_rejeicao": 1.0}
+    assert ad["fundamentado"]["decididos"] == 3
+    assert ad["fundamentado"]["taxa_de_rejeicao"] == pytest.approx(1 / 3)
+    assert ad["sem_verificacao"]["taxa_de_rejeicao"] is None
+
+
+def _fechar_com_trilha(conn, cliente_id, decisao, passos):
+    """Grava direto no store uma trilha com horarios CONHECIDOS - pela API, os
+    horarios seriam 'agora' e a soma nao seria conferivel a mao."""
+    aid, parecer_id, nivel = conn.execute(
+        "SELECT a.id, p.id, p.nivel_risco FROM alertas a JOIN pareceres p ON p.alerta_id = a.id "
+        "WHERE a.cliente_id = ? ORDER BY p.criado_em DESC, p.id DESC LIMIT 1", (cliente_id,)
+    ).fetchone()
+    for de, para, ator, hora in passos:
+        conn.execute("INSERT INTO transicoes (alerta_id, estado_anterior, estado_novo, ator, "
+                     "ator_tipo, registrado_em) VALUES (?, ?, ?, ?, 'analista', ?)",
+                     (aid, de, para, ator, f"2026-09-27T{hora}Z"))
+    conn.execute("UPDATE alertas SET estado = 'concluido' WHERE id = ?", (aid,))
+    nivel = _normalizar(nivel)
+    conn.execute("INSERT INTO decisoes (alerta_id, parecer_id, analista_id, decisao, "
+                 "nivel_risco_analista, nivel_risco_agente, motivo, decidido_em) "
+                 "VALUES (?, ?, 'x', ?, ?, ?, 'm', '2026-09-27T12:00:00Z')",
+                 (aid, parecer_id, decisao, "alto" if decisao == "discordo" else nivel, nivel))
+
+
+def _normalizar(nivel):
+    from confronto import _normalizar_nivel
+    return _normalizar_nivel(nivel)
+
+
+def test_tempo_de_analise_soma_os_periodos_da_trilha(cliente):
+    """<<< aceite do 4.3 >>>
+      CLI-014: ana pega 10:00, devolve 10:10; bruno pega 11:00, conclui 11:05
+               -> 10 + 5 = 15 min = 900 s (os dois periodos contam)
+      CLI-023: pega 09:00, conclui 09:20 -> 1200 s
+      CLI-013: so a conclusao, sem a entrada (pego antes da trilha) -> nao medido
+    """
+    conn = db.conectar(db.CAMINHO_PADRAO)
+    _fechar_com_trilha(conn, "CLI-014", "concordo", [
+        ("triado", "em_analise", "ana", "10:00:00"),
+        ("em_analise", "triado", "ana", "10:10:00"),
+        ("triado", "em_analise", "bruno", "11:00:00"),
+        ("em_analise", "concluido", "bruno", "11:05:00"),
+    ])
+    _fechar_com_trilha(conn, "CLI-023", "discordo", [
+        ("triado", "em_analise", "ana", "09:00:00"),
+        ("em_analise", "concluido", "ana", "09:20:00"),
+    ])
+    _fechar_com_trilha(conn, "CLI-013", "concordo", [
+        ("em_analise", "concluido", "ana", "09:30:00"),
+    ])
+    conn.commit()
+    conn.close()
+
+    t = cliente.get("/metricas").json()["tempo"]
+    assert (t["casos_medidos"], t["casos_sem_trilha_completa"]) == (2, 1)
+    assert (t["mediana_s"], t["media_s"]) == (1050, 1050)
+    assert t["por_decisao"]["concordo"] == {"casos": 1, "mediana_s": 900}
+    assert t["por_decisao"]["discordo"] == {"casos": 1, "mediana_s": 1200}
+    # sem linha de base, nenhuma economia e afirmada
+    assert (t["linha_de_base"], t["economia_mediana_s"]) == (None, None)
+
+    t = cliente.get("/metricas?linha_de_base_min=30").json()["tempo"]
+    assert t["economia_mediana_s"] == 30 * 60 - 1050
+    assert t["linha_de_base"]["minutos"] == 30
+    assert "não medida" in t["linha_de_base"]["procedencia"]
+
+
+def test_linha_de_base_invalida_e_422(cliente):
+    assert cliente.get("/metricas?linha_de_base_min=0").status_code == 422
+    assert cliente.get("/metricas?linha_de_base_min=-5").status_code == 422
+
+
+def test_metricas_de_execucao_inexistente_e_404(cliente):
+    assert cliente.get("/metricas?execucao_id=999").status_code == 404

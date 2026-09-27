@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import {
   alvoDaFonte, explicacaoDaMarca, formatarBRL, formatarData, formatarMomento,
   operacaoEhAlvo, rotuloDaFonte, segmentar, situacaoDaFila,
+  camposDaDecisao, podeDecidir, formatarDuracao, formatarPercentual,
 } from "../../mesa/web/logica.js";
 
 // ---------- segmentar: o texto do parecer nunca pode perder um pedaco ----------
@@ -128,4 +129,35 @@ test("formatarData nao desloca o dia pelo fuso", () => {
 
 test("formatarMomento deixa o fuso explicito", () => {
   assert.equal(formatarMomento("2026-09-12T17:00:49Z"), "12/09/2026 17:00 UTC");
+});
+
+// ---------- Fase 4: decisao ----------
+
+test("campos da decisao seguem as regras da API", () => {
+  assert.deepEqual(camposDaDecisao("concordo"), { nivel: "oculto", motivo: "opcional" });
+  assert.deepEqual(camposDaDecisao("discordo"), { nivel: "obrigatorio", motivo: "obrigatorio" });
+  assert.deepEqual(camposDaDecisao("escalar"), { nivel: "opcional", motivo: "obrigatorio" });
+});
+
+test("so o dono de um caso em analise ve o formulario", () => {
+  const caso = { estado: "em_analise", analista_id: "ana" };
+  assert.equal(podeDecidir(caso, "ana"), true);
+  assert.equal(podeDecidir(caso, "  ana "), true);        // a API tambem faz trim
+  assert.equal(podeDecidir(caso, "bruno"), false);
+  assert.equal(podeDecidir(caso, ""), false);
+  assert.equal(podeDecidir({ estado: "triado", analista_id: null }, ""), false); // null != ""
+  assert.equal(podeDecidir({ estado: "concluido", analista_id: "ana" }, "ana"), false);
+});
+
+test("duracao legivel", () => {
+  assert.equal(formatarDuracao(null), "—");
+  assert.equal(formatarDuracao(40), "40 s");
+  assert.equal(formatarDuracao(720), "12 min");
+  assert.equal(formatarDuracao(3900), "1 h 05 min");
+});
+
+test("percentual sem dado e traco, nunca 0%", () => {
+  assert.equal(formatarPercentual(null), "—");
+  assert.equal(formatarPercentual(0), "0,0%");
+  assert.equal(formatarPercentual(23 / 30), "76,7%");
 });

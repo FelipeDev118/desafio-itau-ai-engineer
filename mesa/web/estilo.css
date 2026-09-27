@@ -292,7 +292,6 @@ h1, h2, h3, h4 { margin: 0; text-wrap: balance; }
 .estado-em_analise { color: var(--acento); }
 .dono { font-weight: 550; color: var(--tinta); }
 .botoes { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-.nota-fase { margin: 0; font-size: 0.74rem; color: var(--tinta-3); max-width: 22rem; text-align: right; }
 
 .botao {
   padding: 0.42rem 0.95rem;
@@ -306,6 +305,8 @@ h1, h2, h3, h4 { margin: 0; text-wrap: balance; }
 }
 .botao:hover { filter: brightness(1.08); }
 .botao-sec { background: var(--superficie); color: var(--acento); }
+.botao:disabled { opacity: 0.55; cursor: progress; }
+.botao-confirmar { background: var(--alto); border-color: var(--alto); }
 
 .caso-corpo {
   display: grid;
@@ -516,3 +517,72 @@ h1, h2, h3, h4 { margin: 0; text-wrap: balance; }
 }
 .aviso-ok   { background: var(--acento); color: var(--superficie); }
 .aviso-erro { background: var(--alto); color: var(--superficie); }
+
+/* ------------------------------------------------------------- decisao (Fase 4) */
+
+.decisao-form { display: grid; gap: 0.85rem; }
+.opcoes { border: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.campo-rotulo { display: block; font-size: 0.78rem; font-weight: 600; color: var(--tinta-2); margin-bottom: 0.3rem; }
+.opcao {
+  display: flex;
+  gap: 0.55rem;
+  align-items: baseline;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--linha);
+  border-radius: 4px;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+.opcao:has(input:checked) { border-color: var(--acento); background: var(--acento-suave); }
+.opcao-off { opacity: 0.55; cursor: not-allowed; }
+.opcao-detalhe { color: var(--tinta-3); font-size: 0.8rem; }
+.campo select, .campo textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 0.86rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--linha-forte);
+  border-radius: 4px;
+  background: var(--superficie);
+  color: var(--tinta);
+}
+.campo select { width: auto; min-width: 10rem; }
+.decisao-aviso { margin: 0; font-size: 0.78rem; }
+
+.decisao-titulo { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0 0 0.35rem; }
+.decisao-tipo { font-weight: 650; }
+.decisao-concordo { color: var(--baixo); }
+.decisao-discordo { color: var(--alto); }
+.decisao-escalar  { color: var(--medio); }
+.decisao-motivo {
+  margin: 0.6rem 0 0;
+  padding: 0.5rem 0.8rem;
+  border-left: 3px solid var(--linha-forte);
+  background: var(--superficie-2);
+  font-size: 0.86rem;
+  white-space: pre-wrap;
+}
+
+.ator { font-weight: 550; font-size: 0.8rem; }
+.ator-sistema { font-family: var(--mono); font-weight: 400; font-size: 0.74rem; color: var(--tinta-3); }
+
+/* ------------------------------------------------------------- metricas (Fase 4.2 / 4.3) */
+
+.link-metricas { color: var(--acento); font-weight: 550; font-size: 0.86rem; text-decoration: none; }
+.link-metricas:hover { text-decoration: underline; }
+
+.numeros { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-bottom: 0.9rem; }
+.numero { display: grid; gap: 0.1rem; }
+.numero-valor { font-size: 1.7rem; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--tinta); line-height: 1.1; }
+.numero-rotulo { font-size: 0.8rem; color: var(--tinta-2); }
+.numero-detalhe { font-size: 0.74rem; color: var(--tinta-3); }
+
+.matriz { border-collapse: collapse; font-size: 0.82rem; margin-bottom: 0.6rem; }
+.matriz th, .matriz td { padding: 0.35rem 0.6rem; border-bottom: 1px solid var(--linha); text-align: left; }
+.matriz th { font-weight: 600; color: var(--tinta-2); }
+.matriz .num { text-align: right; font-variant-numeric: tabular-nums; }
+.matriz .diagonal { background: var(--acento-suave); font-weight: 650; }
+.matriz .zero { color: var(--tinta-3); }
+
+.form-base { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0.6rem 0; font-size: 0.84rem; }
+.campo-base { width: 5rem; font: inherit; padding: 0.3rem 0.4rem; border: 1px solid var(--linha-forte); border-radius: 4px; background: var(--superficie); color: var(--tinta); }

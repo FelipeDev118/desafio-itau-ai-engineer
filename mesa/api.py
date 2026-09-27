@@ -28,22 +28,24 @@ from pydantic import BaseModel
 
 import mesa  # noqa: F401  - poe nivel_2/ no sys.path
 from confronto import _normalizar_nivel
-from mesa import db
+from mesa import db, metricas
 
 Estado = Literal["novo", "triado", "em_analise", "concluido"]
+TipoDecisao = Literal["concordo", "discordo", "escalar"]
+NIVEIS = ("baixo", "médio", "alto")  # o vocabulario do store, com acento (confronto.py)
 
 # A tela da Fase 3 (HTML + JS puro, sem build) servida pela propria API: mesma
 # origem, nenhum segundo servidor para subir, nenhum CORS para configurar.
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
-# As transicoes que ESTE endpoint aceita. Tres, e so tres.
+# As transicoes que o POST /estado aceita. Tres, e so tres.
 #
 # Ficam de fora, de proposito:
 #   novo -> triado          e do worker (mesa/triagem.py); a API nao duplica o
 #                           caminho de quem roda o agente
-#   em_analise -> concluido so com decisao registrada junto (Fase 4). Liberar
-#                           agora permitiria concluir um caso sem registro do que
-#                           o analista decidiu - o oposto de "o humano decide".
+#   em_analise -> concluido so pelo POST /decisao (Fase 4), que grava a decisao
+#                           na mesma transacao. Por aqui, concluiria um caso sem
+#                           registro do que o analista decidiu.
 TRANSICOES = {
     ("novo", "em_analise"),     # analista pegou o caso antes da triagem
     ("triado", "em_analise"),   # analista pegou o caso triado
@@ -89,6 +91,8 @@ class ItemFila(BaseModel):
     qtd_operacoes: int
     analista_id: str | None
     criado_em: str
+    # a decisao do analista, quando o caso ja foi concluido (Fase 4)
+    decisao: TipoDecisao | None
 
 
 class Fila(BaseModel):
@@ -165,6 +169,25 @@ class VersaoParecer(BaseModel):
     criado_em: str
 
 
+class Decisao(BaseModel):
+    decisao: TipoDecisao
+    analista_id: str
+    nivel_risco_analista: str | None
+    # o nivel do parecer que o analista tinha na frente, gravado com a decisao
+    nivel_risco_agente: str | None
+    motivo: str | None
+    parecer_id: int | None
+    decidido_em: str
+
+
+class TransicaoRegistrada(BaseModel):
+    estado_anterior: Estado
+    estado_novo: Estado
+    ator: str
+    ator_tipo: Literal["analista", "sistema"]
+    registrado_em: str
+
+
 class Caso(BaseModel):
     alerta: ItemFila
     execucao_id: int
@@ -179,6 +202,11 @@ class Caso(BaseModel):
     # tabela TRANSICOES que o POST aplica. A tela mostra so estes botoes em vez
     # de manter uma segunda copia da maquina de estados em JavaScript.
     transicoes_permitidas: list[Estado]
+    # Fase 4: o que o analista decidiu (null ate o caso ser concluido) e o
+    # caminho do caso ate aqui, em ordem. A trilha comeca na migracao para o
+    # esquema v6 - transicoes anteriores nao foram gravadas e nao sao inventadas.
+    decisao: Decisao | None
+    trilha: list[TransicaoRegistrada]
 
 
 class Evidencia(BaseModel):
@@ -197,6 +225,77 @@ class Transicao(BaseModel):
     estado_anterior: Estado
     estado: Estado
     analista_id: str | None
+
+
+class NovaDecisao(BaseModel):
+    decisao: TipoDecisao
+    nivel_risco: str | None = None
+    motivo: str | None = None
+    # O parecer que a tela MOSTROU ao analista. Obrigatorio mesmo quando null
+    # (caso sem parecer): o cliente tem que declarar o que viu, nao deixar a API
+    # supor. Se o parecer atual do alerta for outro, a decisao e recusada.
+    parecer_id: int | None
+
+
+Matriz = dict[str, dict[str, int]]
+
+
+class Comparacao(BaseModel):
+    comparaveis: int
+    # None quando nao ha par comparavel - nunca 0.0 (ver mesa/metricas.py)
+    concordancia: float | None
+    matriz: Matriz
+
+
+class AgenteVsAnalista(Comparacao):
+    decididos_com_parecer: int
+    aceitacao_do_parecer: float | None
+
+
+class GrupoAderencia(BaseModel):
+    decididos: int
+    concordo: int
+    discordo: int
+    escalar: int
+    taxa_de_rejeicao: float | None
+
+
+class AderenciaVsDecisao(BaseModel):
+    fundamentado: GrupoAderencia
+    nao_fundamentado: GrupoAderencia
+    sem_verificacao: GrupoAderencia
+
+
+class TempoPorDecisao(BaseModel):
+    casos: int
+    mediana_s: float | None
+
+
+class LinhaDeBase(BaseModel):
+    minutos: float
+    procedencia: str
+
+
+class Tempo(BaseModel):
+    casos_medidos: int
+    casos_sem_trilha_completa: int
+    mediana_s: float | None
+    media_s: float | None
+    por_decisao: dict[str, TempoPorDecisao]
+    linha_de_base: LinhaDeBase | None
+    economia_mediana_s: float | None
+
+
+class Metricas(BaseModel):
+    execucao_id: int
+    casos: int
+    decididos: int
+    por_decisao: dict[str, int]
+    agente_vs_analista: AgenteVsAnalista
+    regra_vs_analista: Comparacao
+    regra_vs_agente: Comparacao
+    aderencia_vs_decisao: AderenciaVsDecisao
+    tempo: Tempo
 
 
 class Execucao(BaseModel):
@@ -218,7 +317,7 @@ class Execucao(BaseModel):
 
 app = FastAPI(
     title="Mesa de Triagem PLD",
-    version="2.0",
+    version="4.0",
     description="Leitura do store da Mesa e transicao de estado dos casos. "
                 "Nenhum calculo de regra acontece aqui.",
 )
@@ -250,7 +349,7 @@ def conexao():
     if not caminho.exists():
         raise HTTPException(
             503,
-            f"store nao encontrado em {caminho} - rode: python -m mesa.ingestao "
+            f"store não encontrado em {caminho} - rode: python -m mesa.ingestao "
             "&& python -m mesa.regras_run && python -m mesa.triagem",
         )
 
@@ -260,8 +359,9 @@ def conexao():
         if versao != db.VERSAO_ESQUEMA:
             raise HTTPException(
                 503,
-                f"store na versao de esquema {versao}, a API espera "
-                f"{db.VERSAO_ESQUEMA} - reconstrua o store (ver mesa/db.py)",
+                f"store na versão de esquema {versao}, a API espera "
+                f"{db.VERSAO_ESQUEMA} - rode: python -m mesa.db (migra versões "
+                "aditivas; as demais exigem reconstruir o store)",
             )
         yield conn
     finally:
@@ -272,11 +372,11 @@ def _execucao(conn: sqlite3.Connection, execucao_id: int | None) -> int:
     if execucao_id is not None:
         if conn.execute("SELECT 1 FROM execucoes_regras WHERE id = ?", (execucao_id,)).fetchone():
             return execucao_id
-        raise HTTPException(404, f"execucao {execucao_id} nao existe")
+        raise HTTPException(404, f"execução {execucao_id} não existe")
 
     linha = conn.execute("SELECT MAX(id) FROM execucoes_regras").fetchone()
     if linha[0] is None:
-        raise HTTPException(503, "store sem execucao de regras - rode: python -m mesa.regras_run")
+        raise HTTPException(503, "store sem execução de regras - rode: python -m mesa.regras_run")
     return int(linha[0])
 
 
@@ -291,10 +391,12 @@ _SELECT_ALERTA = f"""
     SELECT a.id AS alerta_id, a.cliente_id, a.estado, a.origem, a.nivel_risco_regra,
            a.total_sinalizacoes, a.volume_total_brl, a.qtd_operacoes,
            a.analista_id, a.criado_em, a.execucao_id,
-           p.nivel_risco AS nivel_risco_agente, ad.fundamentado
+           p.nivel_risco AS nivel_risco_agente, ad.fundamentado,
+           d.decisao
     FROM alertas a
     LEFT JOIN pareceres p ON p.id = ({_PARECER_ATUAL})
     LEFT JOIN aderencia ad ON ad.parecer_id = p.id
+    LEFT JOIN decisoes d ON d.alerta_id = a.id
 """
 
 # Mesma ordem de dados.ranking_clientes_sinalizados(). cliente_id desempata
@@ -319,13 +421,14 @@ def _item_fila(linha: sqlite3.Row) -> ItemFila:
         qtd_operacoes=linha["qtd_operacoes"],
         analista_id=linha["analista_id"],
         criado_em=linha["criado_em"],
+        decisao=linha["decisao"],
     )
 
 
 def _alerta_ou_404(conn: sqlite3.Connection, alerta_id: int) -> sqlite3.Row:
     linha = conn.execute(f"{_SELECT_ALERTA} WHERE a.id = ?", (alerta_id,)).fetchone()
     if linha is None:
-        raise HTTPException(404, f"alerta {alerta_id} nao existe")
+        raise HTTPException(404, f"alerta {alerta_id} não existe")
     return linha
 
 
@@ -355,7 +458,7 @@ def _decodificar_cursor(cursor: str) -> tuple[int, float, str]:
         total, volume, cliente = json.loads(base64.urlsafe_b64decode(cursor.encode()))
         return int(total), float(volume), str(cliente)
     except (ValueError, TypeError, binascii.Error, json.JSONDecodeError):
-        raise HTTPException(400, "cursor invalido - use o proximo_cursor devolvido pela propria /fila")
+        raise HTTPException(400, "cursor inválido - use o proximo_cursor devolvido pela própria /fila")
 
 
 # ============================================================================
@@ -513,6 +616,22 @@ def caso(alerta_id: int, conn: sqlite3.Connection = Depends(conexao)):
         )
     ]
 
+    d = conn.execute("SELECT * FROM decisoes WHERE alerta_id = ?", (alerta_id,)).fetchone()
+    decisao = None if d is None else Decisao(
+        decisao=d["decisao"], analista_id=d["analista_id"],
+        nivel_risco_analista=d["nivel_risco_analista"], nivel_risco_agente=d["nivel_risco_agente"],
+        motivo=d["motivo"], parecer_id=d["parecer_id"], decidido_em=d["decidido_em"],
+    )
+    trilha = [
+        TransicaoRegistrada(
+            estado_anterior=r["estado_anterior"], estado_novo=r["estado_novo"],
+            ator=r["ator"], ator_tipo=r["ator_tipo"], registrado_em=r["registrado_em"],
+        )
+        for r in conn.execute(
+            "SELECT * FROM transicoes WHERE alerta_id = ? ORDER BY id", (alerta_id,)
+        )
+    ]
+
     return Caso(
         alerta=_item_fila(alerta),
         execucao_id=execucao_id,
@@ -522,6 +641,8 @@ def caso(alerta_id: int, conn: sqlite3.Connection = Depends(conexao)):
         operacoes=operacoes,
         historico_parecer=historico,
         transicoes_permitidas=sorted(d for o, d in TRANSICOES if o == alerta["estado"]),
+        decisao=decisao,
+        trilha=trilha,
     )
 
 
@@ -564,7 +685,7 @@ def mudar_estado(
     """
     analista = (x_analista or "").strip()
     if not analista:
-        raise HTTPException(400, "header X-Analista obrigatorio para mudar o estado de um caso")
+        raise HTTPException(400, "header X-Analista obrigatório para mudar o estado de um caso")
 
     alerta = _alerta_ou_404(conn, alerta_id)
     atual, dono = alerta["estado"], alerta["analista_id"]
@@ -576,17 +697,18 @@ def mudar_estado(
     # Caso ja pego por outro: e o conflito mais comum (tela desatualizada), e
     # merece dizer QUEM pegou, nao "transicao em_analise -> em_analise".
     if atual == "em_analise" and destino == "em_analise":
-        quem = "voce" if dono == analista else dono
-        raise HTTPException(409, f"o caso {caso_nome} ja esta em analise com {quem}")
+        quem = "você" if dono == analista else dono
+        raise HTTPException(409, f"o caso {caso_nome} já está em análise com {quem}")
 
     if (atual, destino) not in TRANSICOES:
         permitidas = sorted(d for o, d in TRANSICOES if o == atual)
         motivo = (
-            "concluir um caso exige a decisao do analista registrada junto (Fase 4)"
+            f"concluir um caso exige a decisão do analista registrada junto - "
+            f"use POST /alertas/{alerta_id}/decisao"
             if destino == "concluido" else
-            f"a partir de '{atual}' so e permitido: {permitidas or 'nenhuma transicao'}"
+            f"a partir de '{atual}' só é permitido: {permitidas or 'nenhuma transição'}"
         )
-        raise HTTPException(409, f"transicao '{atual}' -> '{destino}' nao permitida: {motivo}")
+        raise HTTPException(409, f"transição '{atual}' -> '{destino}' não permitida: {motivo}")
 
     # So quem pegou pode devolver. Sem esta regra, qualquer analista com a
     # pagina aberta devolveria para a fila um caso em analise por outro, e o dono
@@ -595,7 +717,7 @@ def mudar_estado(
     # caso de outro e papel de supervisor, que depende de autenticacao de verdade.)
     if atual == "em_analise" and destino == "triado" and dono and dono != analista:
         raise HTTPException(
-            409, f"o caso {caso_nome} esta em analise com {dono}; so quem pegou o caso pode devolve-lo"
+            409, f"o caso {caso_nome} está em análise com {dono}; só quem pegou o caso pode devolvê-lo"
         )
 
     # Pegar o caso grava quem pegou; devolver para a fila libera o dono.
@@ -607,20 +729,154 @@ def mudar_estado(
     # O dono lido tambem entra na condicao (`IS` compara NULL com seguranca):
     # se outro analista pegou e devolveu o caso entre a leitura e a escrita, o
     # estado voltou ao mesmo, mas o caso ja nao e o que foi lido.
-    cur = conn.execute(
-        "UPDATE alertas SET estado = ?, analista_id = ? "
-        "WHERE id = ? AND estado = ? AND analista_id IS ?",
-        (destino, novo_analista, alerta_id, atual, dono),
-    )
-    conn.commit()
+    # A transicao entra na trilha na MESMA transacao: ou as duas coisas ficam
+    # gravadas, ou nenhuma.
+    with conn:
+        cur = conn.execute(
+            "UPDATE alertas SET estado = ?, analista_id = ? "
+            "WHERE id = ? AND estado = ? AND analista_id IS ?",
+            (destino, novo_analista, alerta_id, atual, dono),
+        )
+        if cur.rowcount == 1:
+            _registrar_transicao(conn, alerta_id, atual, destino, analista)
     if cur.rowcount == 0:
         raise HTTPException(
-            409, f"o caso {caso_nome} mudou de estado durante a requisicao - recarregue e tente de novo"
+            409, f"o caso {caso_nome} mudou de estado durante a requisição - recarregue e tente de novo"
         )
 
     return Transicao(
         alerta_id=alerta_id, estado_anterior=atual, estado=destino, analista_id=novo_analista,
     )
+
+
+def _registrar_transicao(conn: sqlite3.Connection, alerta_id: int, de: str, para: str,
+                         analista: str) -> None:
+    """Uma linha na trilha. Chamada DENTRO da transacao de quem mudou o estado -
+    uma funcao so, para o formato da trilha nao divergir entre as rotas."""
+    conn.execute(
+        "INSERT INTO transicoes (alerta_id, estado_anterior, estado_novo, ator, ator_tipo, "
+        "registrado_em) VALUES (?, ?, ?, ?, 'analista', ?)",
+        (alerta_id, de, para, analista, db.agora_utc()),
+    )
+
+
+def _gravar_decisao(conn: sqlite3.Connection, alerta_id: int, parecer_id: int | None,
+                    analista: str, corpo: NovaDecisao, nivel_analista: str | None,
+                    nivel_agente: str | None, motivo: str | None, decidido_em: str) -> None:
+    conn.execute(
+        "INSERT INTO decisoes (alerta_id, parecer_id, analista_id, decisao, "
+        "nivel_risco_analista, nivel_risco_agente, motivo, decidido_em) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (alerta_id, parecer_id, analista, corpo.decisao, nivel_analista, nivel_agente,
+         motivo, decidido_em),
+    )
+
+
+@app.post("/alertas/{alerta_id}/decisao", response_model=Decisao)
+def decidir(
+    alerta_id: int,
+    corpo: NovaDecisao,
+    x_analista: str | None = Header(default=None),
+    conn: sqlite3.Connection = Depends(conexao),
+):
+    """A decisao do analista - e a UNICA porta para `concluido`.
+
+    Tres escritas numa transacao so: o caso sai de em_analise para concluido
+    (compare-and-set, como no /estado), a decisao e gravada, e a transicao entra
+    na trilha. Se qualquer uma falhar, nenhuma fica: nao existe caso concluido
+    sem decisao, nem decisao de caso que continua aberto.
+
+    Regras de cada decisao (tambem no schema - ver esquema.sql):
+      concordo : exige parecer com nivel; o nivel gravado e o do parecer
+      discordo : exige nivel_risco (o que o analista atribui) e motivo
+      escalar  : exige motivo; nivel_risco opcional
+    """
+    analista = (x_analista or "").strip()
+    if not analista:
+        raise HTTPException(400, "header X-Analista obrigatório para registrar uma decisão")
+
+    # --- o corpo, sozinho, faz sentido? (422: o pedido esta mal formado) ---
+    motivo = (corpo.motivo or "").strip() or None
+    nivel = None
+    if corpo.nivel_risco is not None:
+        nivel = _normalizar_nivel(corpo.nivel_risco)
+        if nivel not in NIVEIS:
+            raise HTTPException(422, f"nível de risco '{corpo.nivel_risco}' inválido - use: {', '.join(NIVEIS)}")
+    if corpo.decisao == "discordo" and (nivel is None or motivo is None):
+        raise HTTPException(422, "discordar exige o nível de risco que você atribui e o motivo")
+    if corpo.decisao == "escalar" and motivo is None:
+        raise HTTPException(422, "escalar exige o motivo")
+
+    # --- o caso esta num estado em que ESTE analista pode decidir? (409) ---
+    alerta = _alerta_ou_404(conn, alerta_id)
+    caso_nome, estado, dono = alerta["cliente_id"], alerta["estado"], alerta["analista_id"]
+    if estado == "concluido":
+        raise HTTPException(409, f"o caso {caso_nome} já foi decidido")
+    if estado != "em_analise":
+        raise HTTPException(
+            409, f"o caso {caso_nome} está '{estado}' - pegue o caso antes de decidir"
+        )
+    if dono != analista:
+        raise HTTPException(
+            409, f"o caso {caso_nome} está em análise com {dono}; só quem pegou o caso decide"
+        )
+
+    parecer_atual = _parecer_atual_id(conn, alerta_id)
+    if corpo.parecer_id != parecer_atual:
+        raise HTTPException(
+            409,
+            f"o parecer do caso {caso_nome} mudou desde que você o abriu - recarregue, "
+            "leia o parecer atual e decida de novo",
+        )
+
+    nivel_agente = None
+    if parecer_atual is not None:
+        bruto = conn.execute(
+            "SELECT nivel_risco FROM pareceres WHERE id = ?", (parecer_atual,)
+        ).fetchone()[0]
+        nivel_agente = _normalizar_nivel(bruto)
+        nivel_agente = nivel_agente if nivel_agente in NIVEIS else None
+
+    # --- concordar depende do parecer (422: nao ha com que concordar) ---
+    if corpo.decisao == "concordo":
+        if nivel_agente is None:
+            raise HTTPException(
+                422, "não há nível de risco do agente com que concordar - discorde ou escale"
+            )
+        if nivel is not None and nivel != nivel_agente:
+            raise HTTPException(
+                422, f"concordar grava o nível do agente ('{nivel_agente}'); para atribuir "
+                     f"'{nivel}', registre 'discordo' com o motivo"
+            )
+        nivel = nivel_agente
+
+    decidido_em = db.agora_utc()
+    try:
+        with conn:
+            cur = conn.execute(
+                "UPDATE alertas SET estado = 'concluido' "
+                "WHERE id = ? AND estado = 'em_analise' AND analista_id = ?",
+                (alerta_id, analista),
+            )
+            if cur.rowcount == 0:
+                raise _CasoMudou()
+            _gravar_decisao(conn, alerta_id, parecer_atual, analista, corpo, nivel,
+                            nivel_agente, motivo, decidido_em)
+            _registrar_transicao(conn, alerta_id, "em_analise", "concluido", analista)
+    except _CasoMudou:
+        raise HTTPException(
+            409, f"o caso {caso_nome} mudou de estado durante a requisição - recarregue e tente de novo"
+        )
+
+    return Decisao(
+        decisao=corpo.decisao, analista_id=analista, nivel_risco_analista=nivel,
+        nivel_risco_agente=nivel_agente, motivo=motivo, parecer_id=parecer_atual,
+        decidido_em=decidido_em,
+    )
+
+
+class _CasoMudou(Exception):
+    """O compare-and-set nao encontrou o caso como foi lido - desfaz a transacao."""
 
 
 _SELECT_EXECUCAO = """
@@ -655,8 +911,27 @@ def execucoes(conn: sqlite3.Connection = Depends(conexao)):
 def execucao(execucao_id: int, conn: sqlite3.Connection = Depends(conexao)):
     linha = conn.execute(f"{_SELECT_EXECUCAO} WHERE e.id = ?", (execucao_id,)).fetchone()
     if linha is None:
-        raise HTTPException(404, f"execucao {execucao_id} nao existe")
+        raise HTTPException(404, f"execução {execucao_id} não existe")
     return _execucao_modelo(linha)
+
+
+# ============================================================================
+# Fase 4.2 / 4.3 - metricas sobre as decisoes
+# ============================================================================
+
+
+@app.get("/metricas", response_model=Metricas)
+def ver_metricas(
+    execucao_id: int | None = None,
+    linha_de_base_min: float | None = Query(None, gt=0, le=24 * 60),
+    conn: sqlite3.Connection = Depends(conexao),
+):
+    """Agente x analista, aderencia x decisao, e o tempo de analise medido.
+
+    `linha_de_base_min` e o tempo de analise por caso SEM a ferramenta. O store
+    nao o tem e nao o inventa: so com ele informado a resposta traz economia, e
+    traz junto a procedencia ("informada, nao medida")."""
+    return metricas.calcular(conn, _execucao(conn, execucao_id), linha_de_base_min)
 
 
 # ============================================================================

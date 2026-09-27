@@ -139,3 +139,51 @@ export const ROTULO_ESTADO = {
   em_analise: "em análise",
   concluido: "concluído",
 };
+
+// ---------------------------------------------------------------- Fase 4
+
+export const ROTULO_DECISAO = {
+  concordo: "Concordo com o parecer",
+  discordo: "Discordo",
+  escalar: "Escalar",
+};
+
+// Quais campos o formulario de decisao mostra, para cada decisao. E so
+// APRESENTACAO: quem valida e a API (e o schema, por baixo). Se as duas
+// divergirem, o pior caso e a API recusar com 422 e a tela mostrar o porque -
+// nunca uma decisao invalida gravada.
+//   nivel : "oculto" (concordo grava o nivel do agente) | "obrigatorio" | "opcional"
+//   motivo: "obrigatorio" | "opcional"
+export function camposDaDecisao(decisao) {
+  switch (decisao) {
+    case "concordo": return { nivel: "oculto", motivo: "opcional" };
+    case "discordo": return { nivel: "obrigatorio", motivo: "obrigatorio" };
+    case "escalar": return { nivel: "opcional", motivo: "obrigatorio" };
+    default: return { nivel: "oculto", motivo: "opcional" };
+  }
+}
+
+// O formulario so aparece para o DONO do caso em analise. A API recusa os
+// outros com 409; a tela nao oferece um formulario que so pode falhar.
+// Comparacao exata, como a API faz com o X-Analista (com trim).
+export function podeDecidir(alerta, analista) {
+  const nome = (analista ?? "").trim();
+  return alerta.estado === "em_analise" && nome !== "" && alerta.analista_id === nome;
+}
+
+// Duracao em segundos -> "1 h 05 min", "12 min", "40 s". null -> "—".
+export function formatarDuracao(segundos) {
+  if (segundos == null) return "—";
+  const s = Math.round(segundos);
+  if (s < 60) return `${s} s`;
+  const min = Math.round(s / 60);
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, "0")} min`;
+}
+
+// Fracao 0..1 -> "76,7%". null (denominador zero, na API) -> "—", NUNCA "0%":
+// "sem dado" e "zero por cento" sao afirmacoes diferentes.
+export function formatarPercentual(fracao) {
+  if (fracao == null) return "—";
+  return `${(fracao * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+}

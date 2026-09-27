@@ -7,9 +7,9 @@
 // malformada (ou maliciosa) em codigo rodando no navegador do analista.
 
 import {
-  alvoDaFonte, explicacaoDaMarca, formatarBRL, formatarData, formatarMomento,
-  operacaoEhAlvo, rotuloDaFonte, ROTULO_ESTADO, ROTULO_TRANSICAO, segmentar,
-  situacaoDaFila,
+  alvoDaFonte, camposDaDecisao, explicacaoDaMarca, formatarBRL, formatarData,
+  formatarDuracao, formatarMomento, formatarPercentual, operacaoEhAlvo, podeDecidir, rotuloDaFonte, ROTULO_DECISAO,
+  ROTULO_ESTADO, ROTULO_TRANSICAO, segmentar, situacaoDaFila,
 } from "./logica.js";
 
 const $ = (seletor, raiz = document) => raiz.querySelector(seletor);
@@ -68,6 +68,7 @@ const estado = {
   total: 0,
   alertaAberto: null,
   caso: null,
+  evidencias: [],
   marcaSelecionada: null,
 };
 
@@ -170,7 +171,8 @@ function itemFila(item) {
         chipNivel("agente", item.nivel_risco_agente)),
       h("span", { class: "item-rodape" },
         h("span", {}, ROTULO_ESTADO[item.estado],
-          item.analista_id ? ` · com ${item.analista_id}` : ""),
+          item.analista_id ? ` · com ${item.analista_id}` : "",
+          item.decisao ? ` · ${item.decisao}` : ""),
         marcaFundamentado(item.fundamentado))));
 }
 
@@ -198,6 +200,7 @@ async function abrirCaso(alertaId) {
     // da do segundo. So desenha se este ainda e o caso aberto.
     if (estado.alertaAberto !== alertaId) return;
     estado.caso = caso;
+    estado.evidencias = evidencias;
     area.replaceChildren(desenharCaso(caso, evidencias));
     area.scrollTop = 0;
   } catch (erro) {
@@ -240,12 +243,7 @@ function cabecalhoCaso(caso) {
       h("p", { class: "caso-estado" },
         h("span", { class: `estado estado-${a.estado}` }, ROTULO_ESTADO[a.estado]),
         a.analista_id ? h("span", { class: "dono" }, ` com ${a.analista_id}`) : null),
-      botoes.length ? h("div", { class: "botoes" }, ...botoes) : null,
-      // Nao ha botao de concluir: concluir exige a decisao registrada junto,
-      // e isso e a Fase 4. Dizer isso e melhor que um botao desabilitado mudo.
-      a.estado === "em_analise"
-        ? h("p", { class: "nota-fase" }, "Concluir o caso exige registrar a decisão — próxima fase.")
-        : null));
+      botoes.length ? h("div", { class: "botoes" }, ...botoes) : null));
 }
 
 // ---------------------------------------------------------------- parecer
@@ -256,7 +254,8 @@ function colunaParecer(caso) {
     return h("div", { class: "coluna" },
       secao("Parecer do agente",
         h("p", { class: "vazio-bloco" },
-          "Este caso ainda não foi triado. Quando o worker de triagem passar por ele, o parecer aparece aqui.")));
+          "Este caso ainda não foi triado. Quando o worker de triagem passar por ele, o parecer aparece aqui.")),
+      blocoDecisao(caso));
   }
 
   const marcas = caso.aderencia?.marcas ?? [];
@@ -276,7 +275,8 @@ function colunaParecer(caso) {
         ? h("div", { class: "red-flags" },
             h("h4", {}, "Sinais apontados pelo agente"),
             h("ul", {}, ...p.red_flags.map((f) => h("li", {}, f))))
-        : null));
+        : null),
+    blocoDecisao(caso));
 }
 
 function origemDoParecer(p) {
@@ -372,7 +372,8 @@ function colunaEvidencia(caso, evidencias) {
     blocoAgregados(caso),
     blocoOperacoes(caso.operacoes),
     blocoFerramentas(evidencias),
-    blocoHistorico(caso.historico_parecer, caso.parecer));
+    blocoHistorico(caso.historico_parecer, caso.parecer),
+    blocoTrilha(caso.trilha));
 }
 
 function blocoSinalizacoes(sinalizacoes) {
@@ -490,6 +491,326 @@ function blocoHistorico(historico, atual) {
         v.parecer_id === atual?.parecer_id ? h("span", { class: "chip chip-atual" }, "atual") : null))));
 }
 
+// ---------------------------------------------------------------- decisao (Fase 4)
+
+function blocoDecisao(caso) {
+  const a = caso.alerta;
+  if (caso.decisao) return registroDecisao(caso.decisao, caso.parecer);
+
+  const analista = $("#analista").value.trim();
+  if (podeDecidir(a, analista)) return formularioDecisao(caso);
+
+  let nota;
+  if (a.estado === "em_analise") {
+    nota = analista
+      ? `Em análise com ${a.analista_id}. Só quem pegou o caso registra a decisão.`
+      : `Em análise com ${a.analista_id}. Se é você, informe seu nome no campo Analista.`;
+  } else {
+    nota = "Pegue o caso para registrar sua decisão.";
+  }
+  return secao("Decisão do analista", h("p", { class: "vazio-bloco" }, nota));
+}
+
+function registroDecisao(d, parecer) {
+  const linhas = [
+    h("p", { class: "decisao-titulo" },
+      h("span", { class: `decisao-tipo decisao-${d.decisao}` }, ROTULO_DECISAO[d.decisao]),
+      d.nivel_risco_analista ? chipNivel("analista", d.nivel_risco_analista) : null),
+    h("p", { class: "meta" },
+      `${d.analista_id} · ${formatarMomento(d.decidido_em)}`,
+      d.parecer_id
+        ? ` · sobre o parecer nº ${d.parecer_id}${d.nivel_risco_agente ? ` (agente: ${d.nivel_risco_agente})` : ""}`
+        : " · decidido sem parecer do agente"),
+  ];
+  if (d.motivo) linhas.push(h("blockquote", { class: "decisao-motivo" }, d.motivo));
+  // Registro append-only: o caso concluido nao reabre nesta fase.
+  if (parecer && d.parecer_id && parecer.parecer_id !== d.parecer_id) {
+    linhas.push(h("p", { class: "nota" },
+      "O parecer exibido acima é mais recente do que o que o analista leu ao decidir."));
+  }
+  return secao("Decisão do analista", ...linhas);
+}
+
+function formularioDecisao(caso) {
+  const nivelAgente = caso.parecer?.nivel_risco ?? null;
+  const podeConcordar = nivelAgente !== null;
+
+  const opcao = (valor, detalhe, desabilitada = false) =>
+    h("label", { class: `opcao${desabilitada ? " opcao-off" : ""}` },
+      h("input", { type: "radio", name: "decisao", value: valor, required: true, disabled: desabilitada }),
+      h("span", {}, h("strong", {}, ROTULO_DECISAO[valor]), h("span", { class: "opcao-detalhe" }, detalhe)));
+
+  const campoNivel = h("label", { class: "campo", hidden: true },
+    h("span", { class: "campo-rotulo" }, "Nível de risco que você atribui"),
+    h("select", { name: "nivel_risco" },
+      h("option", { value: "" }, "—"),
+      ...["baixo", "médio", "alto"].map((n) => h("option", { value: n }, n))));
+  const campoMotivo = h("label", { class: "campo" },
+    h("span", { class: "campo-rotulo" }, "Motivo"),
+    h("textarea", { name: "motivo", rows: "3", maxlength: "2000" }));
+  const enviar = h("button", { type: "submit", class: "botao" }, "Registrar decisão e concluir");
+
+  const form = h("form", { class: "decisao-form" },
+    h("fieldset", { class: "opcoes" },
+      h("legend", { class: "campo-rotulo" }, "Sua decisão sobre o parecer"),
+      opcao("concordo",
+        podeConcordar ? ` — grava o nível do agente (${nivelAgente})` : " — não há nível do agente com que concordar",
+        !podeConcordar),
+      opcao("discordo", " — informe o nível que você atribui e o porquê"),
+      opcao("escalar", " — encaminha ao segundo nível; o porquê é obrigatório")),
+    campoNivel,
+    campoMotivo,
+    h("p", { class: "nota decisao-aviso" },
+      "A decisão é definitiva: o caso é concluído e não pode ser reaberto por aqui."),
+    enviar);
+
+  // Mostra/exige os campos conforme a decisao escolhida. So apresentacao - a
+  // API valida de novo e devolve o porque se recusar.
+  form.addEventListener("change", (evento) => {
+    if (evento.target.name !== "decisao") return;
+    const campos = camposDaDecisao(evento.target.value);
+    campoNivel.hidden = campos.nivel === "oculto";
+    form.elements.nivel_risco.required = campos.nivel === "obrigatorio";
+    form.elements.motivo.required = campos.motivo === "obrigatorio";
+    campoMotivo.querySelector(".campo-rotulo").textContent =
+      campos.motivo === "obrigatorio" ? "Motivo (obrigatório)" : "Motivo (opcional)";
+    desarmar(enviar);
+  });
+
+  // Duas etapas, porque a acao nao se desfaz: o primeiro clique arma, o
+  // segundo confirma. Sem confirm() - que some em alguns navegadores embutidos.
+  form.addEventListener("submit", (evento) => {
+    evento.preventDefault();
+    if (enviar.dataset.armado !== "1") {
+      enviar.dataset.armado = "1";
+      enviar.textContent = `Confirmar: concluir ${caso.alerta.cliente_id}`;
+      enviar.classList.add("botao-confirmar");
+      return;
+    }
+    registrarDecisao(form, caso);
+  });
+
+  return secao("Sua decisão", form);
+}
+
+function desarmar(botao) {
+  delete botao.dataset.armado;
+  botao.textContent = "Registrar decisão e concluir";
+  botao.classList.remove("botao-confirmar");
+}
+
+async function registrarDecisao(form, caso) {
+  const analista = $("#analista").value.trim();
+  const dados = new FormData(form);
+  const decisao = dados.get("decisao");
+  const campos = camposDaDecisao(decisao);
+  const corpo = {
+    decisao,
+    // o parecer que ESTA tela mostrou - a API recusa se o atual for outro
+    parecer_id: caso.parecer?.parecer_id ?? null,
+    motivo: dados.get("motivo") || null,
+    nivel_risco: campos.nivel === "oculto" ? null : dados.get("nivel_risco") || null,
+  };
+  const alertaId = caso.alerta.alerta_id;
+  const botao = form.querySelector("button[type=submit]");
+  botao.disabled = true;
+  try {
+    await api(`/alertas/${alertaId}/decisao`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Analista": analista },
+      body: JSON.stringify(corpo),
+    });
+    avisar(`${caso.alerta.cliente_id} concluído: ${ROTULO_DECISAO[decisao].toLowerCase()}.`, "ok");
+  } catch (erro) {
+    avisar(erro.message, "erro");
+    botao.disabled = false;
+    desarmar(botao);
+    if (erro.status !== 409) return; // 422: o formulario fica como estava para corrigir
+  }
+  // sucesso ou 409 (o caso mudou): recarrega do servidor
+  await Promise.all([carregarFila().catch(mostrarErroFila), abrirCaso(alertaId)]);
+}
+
+const ROTULO_PASSO = {
+  "novo>triado": "triado pelo agente",
+  "novo>em_analise": "pegou o caso (antes da triagem)",
+  "triado>em_analise": "pegou o caso",
+  "em_analise>triado": "devolveu para a fila",
+  "em_analise>concluido": "concluiu com decisão",
+};
+
+function blocoTrilha(trilha) {
+  if (!trilha.length) {
+    return secao("Trilha do caso",
+      h("p", { class: "vazio-bloco" },
+        "Nenhuma transição registrada. A trilha começa a ser gravada no esquema v6; mudanças anteriores não foram guardadas."));
+  }
+  return secao(`Trilha do caso (${trilha.length})`,
+    h("ol", { class: "historico trilha" }, ...trilha.map((t) =>
+      h("li", {},
+        h("span", { class: "hist-momento" }, formatarMomento(t.registrado_em)),
+        h("span", { class: t.ator_tipo === "sistema" ? "ator ator-sistema" : "ator" }, t.ator),
+        h("span", {}, ROTULO_PASSO[`${t.estado_anterior}>${t.estado_novo}`]
+          ?? `${ROTULO_ESTADO[t.estado_anterior]} → ${ROTULO_ESTADO[t.estado_novo]}`)))));
+}
+
+// ---------------------------------------------------------------- metricas (Fase 4.2 / 4.3)
+
+const NIVEIS = ["baixo", "médio", "alto"];
+
+async function abrirMetricas() {
+  estado.alertaAberto = null;
+  estado.caso = null;
+  // trocar so o # nao recarrega a pagina: sem isto, a fila ao lado mostraria
+  // estados de antes das decisoes que as metricas ja contam
+  carregarFila().catch(mostrarErroFila);
+  const area = $("#caso");
+  area.replaceChildren(h("p", { class: "carregando" }, "Carregando métricas…"));
+
+  const linhaDeBase = lerLinhaDeBase();
+  const params = new URLSearchParams();
+  if (linhaDeBase) params.set("linha_de_base_min", linhaDeBase);
+  try {
+    const m = await api(`/metricas?${params}`);
+    if (alertaDaRota() !== null || location.hash !== "#/metricas") return;
+    area.replaceChildren(desenharMetricas(m, linhaDeBase));
+  } catch (erro) {
+    area.replaceChildren(h("div", { class: "erro" }, erro.message));
+  }
+}
+
+const CHAVE_LINHA_DE_BASE = "mesa-triagem.linha-de-base-min";
+function lerLinhaDeBase() {
+  try { return localStorage.getItem(CHAVE_LINHA_DE_BASE) ?? ""; } catch { return ""; }
+}
+function gravarLinhaDeBase(valor) {
+  try {
+    if (valor) localStorage.setItem(CHAVE_LINHA_DE_BASE, valor);
+    else localStorage.removeItem(CHAVE_LINHA_DE_BASE);
+  } catch { /* segue sem lembrar */ }
+}
+
+function numeroGrande(rotulo, valor, detalhe) {
+  return h("div", { class: "numero" },
+    h("span", { class: "numero-valor" }, valor),
+    h("span", { class: "numero-rotulo" }, rotulo),
+    detalhe ? h("span", { class: "numero-detalhe" }, detalhe) : null);
+}
+
+function tabelaMatriz(matriz, linhas, colunas) {
+  return h("div", { class: "tabela-rolagem" },
+    h("table", { class: "matriz" },
+      h("thead", {}, h("tr", {},
+        h("th", {}, `${linhas} ↓ · ${colunas} →`),
+        ...NIVEIS.map((n) => h("th", { class: "num" }, n)))),
+      h("tbody", {}, ...NIVEIS.map((l) =>
+        h("tr", {},
+          h("th", {}, l),
+          ...NIVEIS.map((c) => h("td", {
+            class: `num${l === c ? " diagonal" : ""}${matriz[l][c] ? "" : " zero"}`,
+          }, String(matriz[l][c]))))))));
+}
+
+function desenharMetricas(m, linhaDeBase) {
+  const av = m.agente_vs_analista;
+  const semDecisao = m.decididos === 0;
+
+  const cab = h("header", { class: "caso-cab" },
+    h("div", { class: "caso-titulo" },
+      h("h1", {}, "Métricas da mesa"),
+      h("p", { class: "caso-sub" },
+        `Execução ${m.execucao_id} · ${m.decididos} de ${m.casos} casos decididos · `,
+        `${m.por_decisao.concordo} concordo · ${m.por_decisao.discordo} discordo · ${m.por_decisao.escalar} escalar`)));
+
+  if (semDecisao) {
+    return h("article", { class: "caso-conteudo" }, cab,
+      secao("Agente x analista",
+        h("p", { class: "vazio-bloco" },
+          "Nenhum caso decidido ainda. As métricas aparecem com a primeira decisão registrada — sem decisão, não há o que medir (e “0%” seria uma afirmação falsa).")));
+  }
+
+  const ad = m.aderencia_vs_decisao;
+  const linhaAderencia = (rotulo, g) => h("tr", {},
+    h("th", {}, rotulo),
+    h("td", { class: "num" }, String(g.decididos)),
+    h("td", { class: "num" }, String(g.concordo)),
+    h("td", { class: "num" }, String(g.discordo)),
+    h("td", { class: "num" }, String(g.escalar)),
+    h("td", { class: "num" }, formatarPercentual(g.taxa_de_rejeicao)));
+
+  const t = m.tempo;
+  const campoBase = h("input", {
+    type: "number", min: "1", max: "1440", step: "1", value: linhaDeBase || null,
+    placeholder: "min", class: "campo-base", "aria-label": "Linha de base em minutos",
+  });
+  const formBase = h("form", { class: "form-base" },
+    h("label", {}, "Tempo por caso SEM a ferramenta: ", campoBase, " min"),
+    h("button", { type: "submit", class: "botao botao-sec" }, "Aplicar"));
+  formBase.addEventListener("submit", (evento) => {
+    evento.preventDefault();
+    gravarLinhaDeBase(campoBase.value.trim());
+    abrirMetricas();
+  });
+
+  return h("article", { class: "caso-conteudo" }, cab,
+    h("div", { class: "caso-corpo" },
+      h("div", { class: "coluna" },
+        secao("Agente x analista",
+          h("div", { class: "numeros" },
+            numeroGrande("mesmo nível de risco", formatarPercentual(av.concordancia),
+              `${av.comparaveis} casos comparáveis`),
+            numeroGrande("parecer aceito como está", formatarPercentual(av.aceitacao_do_parecer),
+              `concordo, de ${av.decididos_com_parecer} com parecer`)),
+          tabelaMatriz(av.matriz, "agente", "analista"),
+          h("p", { class: "nota" },
+            "Casos escalados sem nível ficam fora da comparação de nível — não são contados como divergência.")),
+        secao("A métrica antiga, nos mesmos casos",
+          h("div", { class: "numeros" },
+            numeroGrande("regra x analista", formatarPercentual(m.regra_vs_analista.concordancia),
+              `${m.regra_vs_analista.comparaveis} comparáveis`),
+            numeroGrande("regra x agente", formatarPercentual(m.regra_vs_agente.concordancia),
+              `${m.regra_vs_agente.comparaveis} comparáveis`)),
+          h("p", { class: "nota" },
+            "Regra x agente compara duas máquinas. Com decisão humana registrada, a referência passa a ser o analista."))),
+      h("div", { class: "coluna" },
+        secao("O verificador acerta o que o analista rejeita?",
+          h("div", { class: "tabela-rolagem" },
+            h("table", { class: "matriz" },
+              h("thead", {}, h("tr", {},
+                h("th", {}, "parecer"), h("th", { class: "num" }, "decididos"),
+                h("th", { class: "num" }, "concordo"), h("th", { class: "num" }, "discordo"),
+                h("th", { class: "num" }, "escalar"), h("th", { class: "num" }, "rejeição"))),
+              h("tbody", {},
+                linhaAderencia("números conferem", ad.fundamentado),
+                linhaAderencia("número sem procedência", ad.nao_fundamentado),
+                ad.sem_verificacao.decididos ? linhaAderencia("sem verificação", ad.sem_verificacao) : null))),
+          h("p", { class: "nota" }, "Rejeição = discordo + escalar.")),
+        secao("Tempo de análise",
+          h("div", { class: "numeros" },
+            numeroGrande("mediana por caso", formatarDuracao(t.mediana_s),
+              `${t.casos_medidos} casos medidos pela trilha`),
+            numeroGrande("economia por caso",
+              t.economia_mediana_s == null ? "—"
+                : t.economia_mediana_s < 0 ? `−${formatarDuracao(-t.economia_mediana_s)}`
+                : formatarDuracao(t.economia_mediana_s),
+              t.linha_de_base ? `vs. ${t.linha_de_base.minutos} min informados` : "informe a linha de base")),
+          t.casos_sem_trilha_completa
+            ? h("p", { class: "nota" },
+                t.casos_sem_trilha_completa === 1
+                  ? "1 caso decidido não tem trilha completa (pego antes do esquema v6) e não entra na conta."
+                  : `${t.casos_sem_trilha_completa} casos decididos não têm trilha completa (pegos antes do esquema v6) e não entram na conta.`)
+            : null,
+          formBase,
+          h("p", { class: "nota" },
+            t.linha_de_base
+              ? `Linha de base ${t.linha_de_base.procedencia}.`
+              : "O sistema mede o tempo COM a ferramenta. O tempo SEM ela não está no banco — a economia só é calculada com a linha de base que você informar, e aparece marcada como tal."),
+          t.economia_mediana_s != null && t.economia_mediana_s < 0
+            ? h("p", { class: "alerta-caixa alerta-atencao" },
+                "A mediana medida é MAIOR que a linha de base: neste recorte, a ferramenta está custando tempo.")
+            : null))));
+}
+
 // ---------------------------------------------------------------- acoes
 
 async function transicionar(destino) {
@@ -526,12 +847,20 @@ function alertaDaRota() {
 async function iniciar() {
   const campo = $("#analista");
   campo.value = lerAnalista();
-  campo.addEventListener("input", () => gravarAnalista(campo.value.trim()));
+  campo.addEventListener("input", () => {
+    gravarAnalista(campo.value.trim());
+    // o formulario de decisao depende de quem esta olhando: redesenha o caso
+    // aberto (sem ir a API) quando o nome muda
+    if (estado.caso && estado.caso.alerta.alerta_id === estado.alertaAberto) {
+      $("#caso").replaceChildren(desenharCaso(estado.caso, estado.evidencias));
+    }
+  });
 
   $("#filtro-estado").addEventListener("change", () => carregarFila().catch(mostrarErroFila));
   $("#filtro-origem").addEventListener("change", () => carregarFila().catch(mostrarErroFila));
   $("#fila-mais").addEventListener("click", () => carregarFila({ anexar: true }).catch(mostrarErroFila));
   window.addEventListener("hashchange", () => {
+    if (location.hash === "#/metricas") return abrirMetricas();
     const id = alertaDaRota();
     if (id) abrirCaso(id);
   });
@@ -541,6 +870,7 @@ async function iniciar() {
   } catch (erro) {
     mostrarErroFila(erro);
   }
+  if (location.hash === "#/metricas") return abrirMetricas();
   const id = alertaDaRota();
   if (id) abrirCaso(id);
 }

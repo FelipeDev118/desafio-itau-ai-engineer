@@ -21,12 +21,15 @@ from observabilidade import Coletor
 from verificacao_aderencia import verificar
 
 from mesa import regras_run, repositorio
-from mesa.db import conectar
+from mesa.db import agora_utc, conectar
 from mesa.pareceres import RepositorioPareceres
 
 # Espacamento entre chamadas reais de API: o free tier do Groq limita tokens por
 # minuto. Mesmo valor que lote.py usa, pelo mesmo motivo.
 PAUSA_RATE_LIMIT_S = 8
+
+# Como o worker aparece na trilha de transicoes: processo, nao pessoa.
+ATOR_TRIAGEM = "sistema:triagem"
 
 
 @dataclass
@@ -175,8 +178,24 @@ def triar(conn: sqlite3.Connection, execucao_id: int | None = None,
 
 def _concluir(conn: sqlite3.Connection, alerta_id: int) -> None:
     """'triado' = o agente passou por aqui. NAO e 'concluido': quem conclui um
-    caso e o analista (Fase 4), nunca o worker."""
-    conn.execute("UPDATE alertas SET estado = 'triado' WHERE id = ?", (alerta_id,))
+    caso e o analista (Fase 4), nunca o worker.
+
+    So sai de 'novo'. Um analista pode ter pegado o caso enquanto o agente
+    rodava (novo -> em_analise pela API); um UPDATE sem condicao jogaria o caso
+    de volta para 'triado' com o analista ainda gravado como dono - um caso na
+    fila e "de alguem" ao mesmo tempo. O parecer continua gravado e vinculado;
+    so o estado nao e tocado.
+
+    A transicao entra na trilha (Fase 4) na mesma transacao do UPDATE."""
+    cur = conn.execute(
+        "UPDATE alertas SET estado = 'triado' WHERE id = ? AND estado = 'novo'", (alerta_id,)
+    )
+    if cur.rowcount == 1:
+        conn.execute(
+            "INSERT INTO transicoes (alerta_id, estado_anterior, estado_novo, ator, ator_tipo, "
+            "registrado_em) VALUES (?, 'novo', 'triado', ?, 'sistema', ?)",
+            (alerta_id, ATOR_TRIAGEM, agora_utc()),
+        )
     conn.commit()
 
 

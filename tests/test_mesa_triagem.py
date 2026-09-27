@@ -111,6 +111,42 @@ def test_worker_nao_conclui_o_caso_do_analista(conn, contador_api):
     ).fetchone()[0] == 0
 
 
+# ---------- 4.1: o worker na trilha de transicoes ----------
+
+
+def test_worker_grava_a_transicao_na_trilha(conn, contador_api):
+    triagem.triar(conn, limite=3, pausa_s=0, verbose=False)
+    trilha = conn.execute(
+        "SELECT estado_anterior, estado_novo, ator, ator_tipo FROM transicoes"
+    ).fetchall()
+    assert [tuple(t) for t in trilha] == [("novo", "triado", "sistema:triagem", "sistema")] * 3
+
+
+def test_caso_pego_pelo_analista_durante_a_triagem_nao_volta_para_a_fila(conn, monkeypatch):
+    """A corrida que existia: o analista pega um caso 'novo' pela API enquanto o
+    agente roda para ele. O UPDATE sem condicao do worker jogava o caso para
+    'triado' com o analista ainda gravado como dono."""
+    primeiro = triagem.fila(conn, triagem._execucao_mais_recente(conn))[0]
+
+    def agente_lento(**kwargs):
+        # enquanto o agente "pensa", a analista pega o caso pela API
+        conn.execute("UPDATE alertas SET estado='em_analise', analista_id='ana' WHERE id = ?",
+                     (primeiro["id"],))
+        conn.commit()
+        return resposta_final()
+
+    monkeypatch.setattr(agente.CLIENT.chat.completions, "create", agente_lento)
+    triagem.triar(conn, limite=1, pausa_s=0, verbose=False)
+
+    depois = conn.execute("SELECT estado, analista_id FROM alertas WHERE id = ?",
+                          (primeiro["id"],)).fetchone()
+    assert tuple(depois) == ("em_analise", "ana")
+    # o parecer foi gravado e vinculado mesmo assim - a analista o vera
+    assert conn.execute("SELECT COUNT(*) FROM pareceres WHERE alerta_id = ?",
+                        (primeiro["id"],)).fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM transicoes").fetchone()[0] == 0
+
+
 # ---------- 1.5: reaproveitamento ----------
 
 
