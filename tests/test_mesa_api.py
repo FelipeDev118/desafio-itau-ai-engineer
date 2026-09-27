@@ -1066,3 +1066,152 @@ def test_linha_de_base_invalida_e_422(cliente):
 
 def test_metricas_de_execucao_inexistente_e_404(cliente):
     assert cliente.get("/metricas?execucao_id=999").status_code == 404
+
+
+# ============================================================================
+# Fase 5.2 - o caso mostra a base como era
+# ============================================================================
+
+
+def _op_real(op_id):
+    import json as _json
+    ops = _json.loads(DADOS_REAIS.read_text(encoding="utf-8"))["operacoes"]
+    return dict(next(o for o in ops if o["id"] == op_id))
+
+
+def _ingerir_lote(tmp_path, operacoes, nome="lote2.json"):
+    import json as _json
+    arquivo = tmp_path / nome
+    arquivo.write_text(_json.dumps({"taxa_cambio_usd_brl": 5.4, "operacoes": operacoes}),
+                       encoding="utf-8")
+    conn = db.conectar(db.CAMINHO_PADRAO)
+    r = ingerir(conn, arquivo)
+    conn.close()
+    return r
+
+
+def test_caso_antigo_mostra_as_operacoes_como_eram(cliente, tmp_path):
+    """<<< aceite do 5.2 >>> Um lote novo corrige a OP-00269 (a que o parecer
+    do CLI-028 cita errado) e traz uma operacao nova. O caso ANTIGO continua
+    mostrando o valor que o analista viu e nao ganha a operacao que chegou
+    depois; o caso da execucao nova mostra a base nova."""
+    antigo = _alerta_de(cliente, "CLI-028")
+    corrigida = {**_op_real("OP-00269"), "valor": 7000.0}
+    nova = {**_op_real("OP-00269"), "id": "OP-90001", "valor": 1234.0}
+    r = _ingerir_lote(tmp_path, [corrigida, nova])
+    assert (r.operacoes_corrigidas, r.operacoes_inseridas) == (1, 1)
+
+    def ops(alerta_id):
+        return {o["id"]: o["valor_brl"] for o in cliente.get(f"/alertas/{alerta_id}").json()["operacoes"]}
+
+    assert ops(antigo)["OP-00269"] == pytest.approx(6913.84)
+    assert "OP-90001" not in ops(antigo)
+
+    conn = db.conectar(db.CAMINHO_PADRAO)
+    regras_run.executar(conn)
+    conn.close()
+    atual = _alerta_de(cliente, "CLI-028")
+    assert atual != antigo
+    assert ops(atual)["OP-00269"] == pytest.approx(7000.0)
+    assert ops(atual)["OP-90001"] == pytest.approx(1234.0)
+
+
+# ============================================================================
+# Fase 5.1 - delta: execucao incremental, vigencia e substituicao
+# ============================================================================
+
+
+def test_base_nova_reprocessa_so_o_delta_sem_apagar_o_trabalho_do_analista(cliente, tmp_path, monkeypatch):
+    """<<< aceite do 5.1 >>> CLI-028 ja decidido; CLI-014 em analise com a ana.
+    Chega um lote com operacao nova para os dois. Esperado:
+      - uma execucao incremental com exatamente 2 alertas
+      - os outros 28 casos intactos (mesmo alerta, estado, dono)
+      - o CLI-014 antigo nao pode ser pego nem decidido, so devolvido
+      - o CLI-028 novo mostra a decisao anterior
+      - o worker chama o LLM so para os 2
+      - rodar as regras de novo: nada a fazer"""
+    from tests_apoio import resposta_final
+
+    aid_028, aid_014 = _alerta_de(cliente, "CLI-028"), _alerta_de(cliente, "CLI-014")
+    _mudar(cliente, aid_028, "em_analise")
+    assert _decidir(cliente, aid_028, "discordo", nivel_risco="alto", motivo="OP-00269").status_code == 200
+    _mudar(cliente, aid_014, "em_analise", analista="ana")
+    antes = {i["cliente_id"]: (i["alerta_id"], i["estado"], i["analista_id"])
+             for i in cliente.get("/fila?origem=todos&limite=200").json()["itens"]}
+
+    _ingerir_lote(tmp_path, [
+        {**_op_real("OP-00269"), "id": "OP-90001", "valor": 1500.0},
+        {**_op_real("OP-00269"), "id": "OP-90002", "cliente_id": "CLI-014", "valor": 800.0},
+    ])
+    conn = db.conectar(db.CAMINHO_PADRAO)
+    r = regras_run.executar(conn)
+    conn.close()
+    assert (r.escopo, r.alertas_regra + r.alertas_controle) == ("incremental", 2)
+
+    depois = {i["cliente_id"]: (i["alerta_id"], i["estado"], i["analista_id"])
+              for i in cliente.get("/fila?origem=todos&limite=200").json()["itens"]}
+    assert len(depois) == 30
+    intactos = {c: v for c, v in antes.items() if c not in ("CLI-028", "CLI-014")}
+    assert {c: depois[c] for c in intactos} == intactos
+    assert depois["CLI-028"][0] != aid_028 and depois["CLI-014"][0] != aid_014
+
+    # o alerta antigo do CLI-014: substituido, com a ana. So pode ser devolvido.
+    velho = cliente.get(f"/alertas/{aid_014}").json()
+    assert velho["alerta"]["substituido_por"] == depois["CLI-014"][0]
+    assert velho["transicoes_permitidas"] == ["triado"]
+    r_dec = _decidir(cliente, aid_014, "escalar", analista="ana", motivo="x")
+    assert r_dec.status_code == 409 and "substituído" in r_dec.json()["detail"]
+    assert _mudar(cliente, aid_014, "triado", analista="ana").status_code == 200
+    assert _mudar(cliente, aid_014, "em_analise", analista="ana").status_code == 409
+
+    # o CLI-028 novo carrega a decisao tomada antes do dado novo
+    novo_028 = cliente.get(f"/alertas/{depois['CLI-028'][0]}").json()
+    assert novo_028["decisao"] is None
+    assert novo_028["decisao_anterior"]["decisao"] == "discordo"
+    assert novo_028["alerta"]["substitui_alerta_id"] == aid_028
+
+    # o worker: LLM so para os 2 (a entrada deles mudou; nenhum outro esta 'novo')
+    chamadas = {"n": 0}
+
+    def fake(**kwargs):
+        chamadas["n"] += 1
+        return resposta_final()
+
+    monkeypatch.setattr(agente.CLIENT.chat.completions, "create", fake)
+    conn = db.conectar(db.CAMINHO_PADRAO)
+    t = triagem.triar(conn, pausa_s=0, verbose=False)
+    assert (t.triados, t.chamadas_api, chamadas["n"]) == (2, 2, 2)
+    assert regras_run.executar(conn) is None
+    conn.close()
+
+    # as metricas contam a decisao tomada no alerta que foi substituido
+    assert cliente.get("/metricas").json()["decididos"] == 1
+
+
+def test_verificar_ambiente_le_os_vigentes_e_nao_a_ultima_execucao(cliente, tmp_path):
+    """Depois de uma execucao incremental de UM cliente sem sinalizacao, a
+    "ultima execucao" tem 0 fracionamento e 0 atipicas. Os numeros da base tem
+    que continuar os da entrega - lidos dos vigentes."""
+    import verificar_ambiente
+
+    _ingerir_lote(tmp_path, [{**_op_real("OP-00269"), "id": "OP-90003",
+                              "cliente_id": "CLI-011", "valor": 10.0}])
+    conn = db.conectar(db.CAMINHO_PADRAO)
+    r = regras_run.executar(conn)
+    conn.close()
+    assert r.escopo == "incremental" and r.clientes_fracionamento == 0
+
+    obtido, _ = verificar_ambiente.obter_do_store()
+    esperado = verificar_ambiente.ESPERADO
+    for chave in ("clientes_fracionamento", "operacoes_atipicas", "top10"):
+        assert obtido[chave] == esperado[chave], chave
+
+
+def test_tamanhos_tem_limite_porque_o_registro_e_para_sempre(cliente):
+    """Achado da auditoria: a tela limitava o motivo a 2000, a API nao."""
+    aid = _alerta_de(cliente, "CLI-014")
+    assert _mudar(cliente, aid, "em_analise", analista="a" * 101).status_code == 400
+    _mudar(cliente, aid, "em_analise")
+    r = _decidir(cliente, aid, "escalar", motivo="x" * 2001)
+    assert r.status_code == 422
+    assert _decidir(cliente, aid, "escalar", motivo="x" * 2000).status_code == 200

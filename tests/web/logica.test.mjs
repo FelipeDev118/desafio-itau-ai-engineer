@@ -147,6 +147,9 @@ test("so o dono de um caso em analise ve o formulario", () => {
   assert.equal(podeDecidir(caso, ""), false);
   assert.equal(podeDecidir({ estado: "triado", analista_id: null }, ""), false); // null != ""
   assert.equal(podeDecidir({ estado: "concluido", analista_id: "ana" }, "ana"), false);
+  // Fase 5.1: substituido por dado novo -> decide-se no caso atual
+  assert.equal(podeDecidir({ ...caso, substituido_por: 42 }, "ana"), false);
+  assert.equal(podeDecidir({ ...caso, substituido_por: null }, "ana"), true);
 });
 
 test("duracao legivel", () => {

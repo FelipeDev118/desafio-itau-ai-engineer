@@ -75,12 +75,7 @@ CREATE TABLE IF NOT EXISTS execucoes_regras (
     executado_em           TEXT    NOT NULL,
     operacoes_avaliadas    INTEGER NOT NULL,
     clientes_fracionamento INTEGER NOT NULL,
-    operacoes_atipicas     INTEGER NOT NULL,
-    -- v7 (Fase 5): 'completa' avalia todos os clientes; 'incremental' so os que
-    -- tiveram operacao nova ou corrigida desde a execucao anterior. Ultima
-    -- coluna de proposito: e onde o ALTER TABLE da migracao a coloca.
-    escopo                 TEXT    NOT NULL DEFAULT 'completa'
-        CHECK (escopo IN ('completa', 'incremental'))
+    operacoes_atipicas     INTEGER NOT NULL
 );
 
 -- Cada disparo individual de regra: e o que liga o alerta a evidencia exata.
@@ -121,11 +116,6 @@ CREATE TABLE IF NOT EXISTS alertas (
         CHECK (estado IN ('novo', 'triado', 'em_analise', 'concluido')),
     analista_id                TEXT,
     criado_em                  TEXT    NOT NULL,
-    -- v7 (Fase 5): o alerta vigente do cliente que este substituiu. O vigente
-    -- de um cliente e o alerta que NENHUM outro substitui - "vigente" e
-    -- consulta, nao coluna, como o parecer atual. A decisao tomada no alerta
-    -- substituido continua nele: e historia, nao se transfere.
-    substitui_alerta_id        INTEGER REFERENCES alertas(id),
     UNIQUE (execucao_id, cliente_id)
 );
 
@@ -245,152 +235,3 @@ CREATE TABLE IF NOT EXISTS chamadas_llm (
 );
 
 CREATE INDEX IF NOT EXISTS idx_chamadas_parecer ON chamadas_llm(parecer_id);
-
--- ===========================================================================
--- FASE 4 - O HUMANO DECIDE, E A DECISAO VIRA REGISTRO
--- ===========================================================================
-
--- Trilha de TODA mudanca de estado de um caso: quem, de onde, para onde,
--- quando. alertas.estado/analista_id dizem so o AGORA - quem pegou o caso ontem
--- e devolveu some dali. Para compliance, o caminho importa tanto quanto o fim.
---
--- ator_tipo separa pessoa de processo: 'sistema' e o worker de triagem
--- (ator 'sistema:triagem'), 'analista' e quem veio no header X-Analista.
-CREATE TABLE IF NOT EXISTS transicoes (
-    id              INTEGER PRIMARY KEY,
-    alerta_id       INTEGER NOT NULL REFERENCES alertas(id),
-    estado_anterior TEXT    NOT NULL
-        CHECK (estado_anterior IN ('novo', 'triado', 'em_analise', 'concluido')),
-    estado_novo     TEXT    NOT NULL
-        CHECK (estado_novo IN ('novo', 'triado', 'em_analise', 'concluido')),
-    ator            TEXT    NOT NULL,
-    ator_tipo       TEXT    NOT NULL CHECK (ator_tipo IN ('analista', 'sistema')),
-    registrado_em   TEXT    NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_trans_alerta ON transicoes(alerta_id, id);
-
-CREATE TRIGGER IF NOT EXISTS transicoes_sem_update BEFORE UPDATE ON transicoes
-BEGIN
-    SELECT RAISE(ABORT, 'transicoes e append-only: a trilha nao se reescreve');
-END;
-
-CREATE TRIGGER IF NOT EXISTS transicoes_sem_delete BEFORE DELETE ON transicoes
-BEGIN
-    SELECT RAISE(ABORT, 'transicoes e append-only: a trilha nao se apaga');
-END;
-
--- A decisao do analista. Uma por caso (UNIQUE): `concluido` e terminal nesta
--- fase - reabrir caso decidido e papel de supervisor, que exige autenticacao
--- de verdade. O UNIQUE faz o BANCO garantir isso, alem do compare-and-set.
---
--- parecer_id e o parecer que o analista VIU ao decidir (a API recusa decisao
--- sobre parecer diferente do atual). NULL quando o caso foi decidido sem
--- parecer - um caso pego antes da triagem, que o worker nao toca.
---
--- nivel_risco_agente e COPIADO do parecer visto, normalizado, em vez de lido
--- por join na hora da metrica: a metrica agente-vs-humano compara com o que o
--- analista tinha na frente, e isso nao pode depender de consulta nenhuma.
-CREATE TABLE IF NOT EXISTS decisoes (
-    id                   INTEGER PRIMARY KEY,
-    alerta_id            INTEGER NOT NULL UNIQUE REFERENCES alertas(id),
-    parecer_id           INTEGER          REFERENCES pareceres(id),
-    analista_id          TEXT    NOT NULL,
-    decisao              TEXT    NOT NULL CHECK (decisao IN ('concordo', 'discordo', 'escalar')),
-    nivel_risco_analista TEXT             CHECK (nivel_risco_analista IN ('baixo', 'médio', 'alto')),
-    nivel_risco_agente   TEXT             CHECK (nivel_risco_agente IN ('baixo', 'médio', 'alto')),
-    motivo               TEXT,
-    decidido_em          TEXT    NOT NULL,
-    -- as regras de cada decisao tambem no schema, nao so na API: concordar
-    -- exige um nivel do agente com que concordar; discordar exige o nivel
-    -- proposto e o porque; escalar exige o porque.
-    -- CUIDADO ao mexer: um CHECK cuja expressao da NULL PASSA. `length(trim(
-    -- NULL)) > 0` e NULL, e deixava "escalar sem motivo" entrar - pego pelo
-    -- teste. Por isso o COALESCE e o `IS` (que compara NULL como valor) no
-    -- lugar de `=`.
-    CHECK (decisao != 'concordo' OR (nivel_risco_agente IS NOT NULL
-                                     AND nivel_risco_analista IS nivel_risco_agente)),
-    CHECK (decisao != 'discordo' OR (nivel_risco_analista IS NOT NULL
-                                     AND COALESCE(length(trim(motivo)), 0) > 0)),
-    CHECK (decisao != 'escalar' OR COALESCE(length(trim(motivo)), 0) > 0)
-);
-
-CREATE TRIGGER IF NOT EXISTS decisoes_sem_update BEFORE UPDATE ON decisoes
-BEGIN
-    SELECT RAISE(ABORT, 'decisoes e append-only: decisao registrada nao se altera');
-END;
-
-CREATE TRIGGER IF NOT EXISTS decisoes_sem_delete BEFORE DELETE ON decisoes
-BEGIN
-    SELECT RAISE(ABORT, 'decisoes e append-only: decisao registrada nao se apaga');
-END;
-
--- ===========================================================================
--- FASE 5 - BASE QUE CRESCE E SE CORRIGE
--- ===========================================================================
-
-CREATE INDEX IF NOT EXISTS idx_alertas_substitui ON alertas(substitui_alerta_id);
-CREATE INDEX IF NOT EXISTS idx_alertas_cliente   ON alertas(cliente_id, id);
-
--- Cada versao SUBSTITUIDA de uma operacao. `operacoes` guarda a versao atual;
--- quando um lote novo traz o mesmo id com dado diferente (correcao), a versao
--- anterior vem para ca - pelo trigger abaixo, nao pelo codigo da ingestao.
---
--- lote_id = o lote que trouxe ESTA versao; substituida_pelo_lote = o que trouxe
--- a seguinte. A versao vigente num lote L e a que tem lote_id <= L e nao foi
--- substituida ate L. E o que deixa um caso decidido ontem ser exibido com as
--- operacoes como eram ontem.
-CREATE TABLE IF NOT EXISTS operacoes_historico (
-    id                    INTEGER PRIMARY KEY,
-    operacao_id           TEXT    NOT NULL REFERENCES operacoes(id),
-    lote_id               INTEGER NOT NULL REFERENCES lotes_ingestao(id),
-    cliente_id            TEXT    NOT NULL,
-    data                  TEXT,
-    data_valida           INTEGER NOT NULL,
-    valor                 REAL    NOT NULL,
-    moeda                 TEXT    NOT NULL,
-    valor_brl             REAL    NOT NULL,
-    canal                 TEXT    NOT NULL,
-    tipo                  TEXT    NOT NULL,
-    contraparte           TEXT    NOT NULL,
-    observacao            TEXT    NOT NULL,
-    substituida_pelo_lote INTEGER NOT NULL REFERENCES lotes_ingestao(id),
-    substituida_em        TEXT    NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_hist_operacao ON operacoes_historico(operacao_id, lote_id);
-
--- Corrigir sem guardar a versao anterior fica IMPOSSIVEL, nao so proibido. E a
--- correcao tem que vir de um lote posterior: com o mesmo lote, a janela de
--- vigencia da versao antiga seria vazia e a historia, ambigua.
-CREATE TRIGGER IF NOT EXISTS operacoes_guarda_versao BEFORE UPDATE ON operacoes
-BEGIN
-    SELECT RAISE(ABORT, 'o id de uma operacao nao muda')
-    WHERE NEW.id != OLD.id;
-    SELECT RAISE(ABORT, 'correcao de operacao exige um lote posterior ao da versao atual')
-    WHERE NEW.lote_id <= OLD.lote_id;
-    INSERT INTO operacoes_historico (
-        operacao_id, lote_id, cliente_id, data, data_valida, valor, moeda, valor_brl,
-        canal, tipo, contraparte, observacao, substituida_pelo_lote, substituida_em
-    ) VALUES (
-        OLD.id, OLD.lote_id, OLD.cliente_id, OLD.data, OLD.data_valida, OLD.valor,
-        OLD.moeda, OLD.valor_brl, OLD.canal, OLD.tipo, OLD.contraparte, OLD.observacao,
-        NEW.lote_id, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-    );
-END;
-
--- Arquivo novo e incremental: operacao ausente nele NAO foi apagada. Nada apaga.
-CREATE TRIGGER IF NOT EXISTS operacoes_sem_delete BEFORE DELETE ON operacoes
-BEGIN
-    SELECT RAISE(ABORT, 'operacao ingerida nao se apaga - corrija com um lote novo');
-END;
-
-CREATE TRIGGER IF NOT EXISTS operacoes_historico_sem_update BEFORE UPDATE ON operacoes_historico
-BEGIN
-    SELECT RAISE(ABORT, 'operacoes_historico e append-only');
-END;
-
-CREATE TRIGGER IF NOT EXISTS operacoes_historico_sem_delete BEFORE DELETE ON operacoes_historico
-BEGIN
-    SELECT RAISE(ABORT, 'operacoes_historico e append-only');
-END;

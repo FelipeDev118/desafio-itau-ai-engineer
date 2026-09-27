@@ -195,3 +195,83 @@ def test_fila_ordena_pelo_mesmo_criterio_do_ranking(conn):
     ]
     df = aplicar_regras(repositorio.operacoes_df(conn))
     assert fila == ranking_clientes_sinalizados(df, top_n=10)["cliente_id"].tolist()
+
+
+# ---------- 5.1: execucao incremental ----------
+
+
+def _lote(tmp_path, conn, operacoes, nome="lote2.json"):
+    caminho = tmp_path / nome
+    caminho.write_text(json.dumps({"taxa_cambio_usd_brl": 5.4, "operacoes": operacoes}),
+                       encoding="utf-8")
+    return ingerir(conn, caminho)
+
+
+def _op_real(op_id, **mudancas):
+    ops = json.loads(DADOS_REAIS.read_text(encoding="utf-8"))["operacoes"]
+    return {**next(o for o in ops if o["id"] == op_id), **mudancas}
+
+
+def test_regras_sobre_o_delta_sao_as_mesmas_da_base_inteira(conn):
+    """A garantia que SUSTENTA a execucao incremental: as regras sao por
+    cliente, entao rodar sobre o recorte de um cliente da o mesmo resultado que
+    rodar sobre a base inteira e olhar so aquele cliente. Conferido para os 30.
+    Se um dia entrar uma regra entre clientes, este teste quebra - e o delta
+    tem que alargar, nao o teste afrouxar."""
+    from dados import aplicar_regras
+    from mesa import repositorio
+
+    df = repositorio.operacoes_df(conn)
+    inteira = aplicar_regras(df).set_index("id")
+    colunas = ["flag_fracionamento", "flag_valor_atipico"]
+    for cliente in df["cliente_id"].unique():
+        recorte = aplicar_regras(df[df["cliente_id"] == cliente]).set_index("id")
+        assert recorte[colunas].equals(inteira.loc[recorte.index, colunas]), cliente
+
+
+def test_primeira_execucao_e_completa_e_repetir_nao_faz_nada(conn):
+    primeira = regras_run.executar(conn)
+    assert (primeira.escopo, primeira.alertas_regra + primeira.alertas_controle) == ("completa", 30)
+    assert regras_run.executar(conn) is None
+    # reingerir o MESMO arquivo tambem nao e delta
+    ingerir(conn, DADOS_REAIS)
+    assert regras_run.executar(conn) is None
+    assert conn.execute("SELECT COUNT(*) FROM execucoes_regras").fetchone()[0] == 1
+
+
+def test_lote_novo_gera_execucao_so_para_os_clientes_afetados(conn, tmp_path):
+    regras_run.executar(conn)
+    _lote(tmp_path, conn, [
+        _op_real("OP-00269", valor=7000.0),                          # correcao, CLI-028
+        _op_real("OP-00001", id="OP-90001", cliente_id="CLI-011"),  # nova, CLI-011
+    ])
+    r = regras_run.executar(conn)
+    assert r.escopo == "incremental"
+    novos = conn.execute(
+        "SELECT cliente_id, substitui_alerta_id FROM alertas WHERE execucao_id = ? ORDER BY cliente_id",
+        (r.execucao_id,),
+    ).fetchall()
+    assert [n[0] for n in novos] == ["CLI-011", "CLI-028"]
+    assert all(n[1] is not None for n in novos)          # cada um substitui o anterior
+    vigentes = conn.execute(
+        f"SELECT COUNT(*) FROM alertas a WHERE {__import__('mesa.repositorio', fromlist=['x']).VIGENTE}"
+    ).fetchone()[0]
+    assert vigentes == 30                                # um por cliente, sempre
+
+
+def test_correcao_que_move_operacao_de_cliente_reavalia_os_dois(conn, tmp_path):
+    regras_run.executar(conn)
+    antes = _op_real("OP-00269")["cliente_id"]
+    _lote(tmp_path, conn, [_op_real("OP-00269", cliente_id="CLI-011")])
+    r = regras_run.executar(conn)
+    clientes = {c for (c,) in conn.execute(
+        "SELECT cliente_id FROM alertas WHERE execucao_id = ?", (r.execucao_id,))}
+    assert clientes == {antes, "CLI-011"}
+
+
+def test_parametros_diferentes_forcam_execucao_completa(conn):
+    regras_run.executar(conn)
+    outros = {**PARAMETROS_REGRAS, "atipico_fator": 4}
+    r = regras_run.executar(conn, outros)
+    assert r.escopo == "completa"
+    assert r.alertas_regra + r.alertas_controle == 30

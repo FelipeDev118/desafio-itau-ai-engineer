@@ -172,7 +172,8 @@ function itemFila(item) {
       h("span", { class: "item-rodape" },
         h("span", {}, ROTULO_ESTADO[item.estado],
           item.analista_id ? ` · com ${item.analista_id}` : "",
-          item.decisao ? ` · ${item.decisao}` : ""),
+          item.decisao ? ` · ${item.decisao}` : "",
+          item.substitui_alerta_id ? " · dados novos" : ""),
         marcaFundamentado(item.fundamentado))));
 }
 
@@ -212,6 +213,7 @@ async function abrirCaso(alertaId) {
 function desenharCaso(caso, evidencias) {
   return h("article", { class: "caso-conteudo" },
     cabecalhoCaso(caso),
+    avisoDeVigencia(caso),
     h("div", { class: "caso-corpo" },
       colunaParecer(caso),
       colunaEvidencia(caso, evidencias)));
@@ -244,6 +246,34 @@ function cabecalhoCaso(caso) {
         h("span", { class: `estado estado-${a.estado}` }, ROTULO_ESTADO[a.estado]),
         a.analista_id ? h("span", { class: "dono" }, ` com ${a.analista_id}`) : null),
       botoes.length ? h("div", { class: "botoes" }, ...botoes) : null));
+}
+
+// Fase 5.1: um cliente pode ter varios alertas ao longo do tempo - um novo a
+// cada lote que traz operacao dele. So o VIGENTE esta na fila; os anteriores
+// ficam como historia, com a decisao que tiverem.
+function avisoDeVigencia(caso) {
+  const a = caso.alerta;
+  if (a.substituido_por != null) {
+    return h("div", { class: "alerta-caixa alerta-atencao vigencia" },
+      h("strong", {}, "Este alerta foi substituído. "),
+      "Chegaram operações novas para o cliente e as regras rodaram de novo. ",
+      a.estado === "em_analise"
+        ? "Não dá para decidir sobre a base antiga — devolva este e pegue o caso atual. "
+        : "O que está aqui é a base como era. ",
+      h("a", { href: `#/alerta/${a.substituido_por}` }, "Abrir o caso atual →"));
+  }
+  if (a.substitui_alerta_id != null) {
+    const d = caso.decisao_anterior;
+    return h("div", { class: "alerta-caixa alerta-info vigencia" },
+      h("strong", {}, "Caso reaberto por dados novos. "),
+      d
+        ? `Antes das operações novas, ${d.analista_id} decidiu “${ROTULO_DECISAO[d.decisao].toLowerCase()}”`
+          + `${d.nivel_risco_analista ? ` (${d.nivel_risco_analista})` : ""} em ${formatarMomento(d.decidido_em)}. `
+          + "A decisão vale para a base de então; esta é uma decisão nova. "
+        : "O alerta anterior deste cliente não chegou a ser decidido. ",
+      h("a", { href: `#/alerta/${a.substitui_alerta_id}` }, "Ver o alerta anterior →"));
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------- parecer
@@ -501,7 +531,9 @@ function blocoDecisao(caso) {
   if (podeDecidir(a, analista)) return formularioDecisao(caso);
 
   let nota;
-  if (a.estado === "em_analise") {
+  if (a.substituido_por != null) {
+    nota = "Alerta substituído por dados novos — a decisão é registrada no caso atual.";
+  } else if (a.estado === "em_analise") {
     nota = analista
       ? `Em análise com ${a.analista_id}. Só quem pegou o caso registra a decisão.`
       : `Em análise com ${a.analista_id}. Se é você, informe seu nome no campo Analista.`;
@@ -657,6 +689,15 @@ function blocoTrilha(trilha) {
 // ---------------------------------------------------------------- metricas (Fase 4.2 / 4.3)
 
 const NIVEIS = ["baixo", "médio", "alto"];
+
+// O botao do topo mostra onde o analista esta: ativo nas metricas.
+function marcarRota() {
+  const nasMetricas = location.hash === "#/metricas";
+  const link = $("#link-metricas");
+  link.classList.toggle("ativo", nasMetricas);
+  if (nasMetricas) link.setAttribute("aria-current", "page");
+  else link.removeAttribute("aria-current");
+}
 
 async function abrirMetricas() {
   estado.alertaAberto = null;
@@ -858,8 +899,14 @@ async function iniciar() {
 
   $("#filtro-estado").addEventListener("change", () => carregarFila().catch(mostrarErroFila));
   $("#filtro-origem").addEventListener("change", () => carregarFila().catch(mostrarErroFila));
+  // Clicar em Metricas estando nas metricas nao muda o # (nenhum hashchange):
+  // sem isto o clique pareceria morto. Aqui ele recarrega os numeros.
+  $("#link-metricas").addEventListener("click", () => {
+    if (location.hash === "#/metricas") abrirMetricas();
+  });
   $("#fila-mais").addEventListener("click", () => carregarFila({ anexar: true }).catch(mostrarErroFila));
   window.addEventListener("hashchange", () => {
+    marcarRota();
     if (location.hash === "#/metricas") return abrirMetricas();
     const id = alertaDaRota();
     if (id) abrirCaso(id);
@@ -870,6 +917,7 @@ async function iniciar() {
   } catch (erro) {
     mostrarErroFila(erro);
   }
+  marcarRota();
   if (location.hash === "#/metricas") return abrirMetricas();
   const id = alertaDaRota();
   if (id) abrirCaso(id);

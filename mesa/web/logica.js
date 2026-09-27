@@ -166,9 +166,12 @@ export function camposDaDecisao(decisao) {
 // O formulario so aparece para o DONO do caso em analise. A API recusa os
 // outros com 409; a tela nao oferece um formulario que so pode falhar.
 // Comparacao exata, como a API faz com o X-Analista (com trim).
+// Alerta substituido (chegou operacao nova, Fase 5.1) tambem nao: a API recusa
+// decidir sobre a base velha.
 export function podeDecidir(alerta, analista) {
   const nome = (analista ?? "").trim();
-  return alerta.estado === "em_analise" && nome !== "" && alerta.analista_id === nome;
+  return alerta.estado === "em_analise" && nome !== "" && alerta.analista_id === nome
+    && alerta.substituido_por == null;
 }
 
 // Duracao em segundos -> "1 h 05 min", "12 min", "40 s". null -> "—".

@@ -26,6 +26,13 @@ COLUNAS_INSERT = (
     "canal, tipo, contraparte, observacao"
 )
 
+# O que define se uma operacao que ja existe foi CORRIGIDA: os campos como
+# chegaram no arquivo. valor_brl fica de fora de proposito - e derivado com a
+# taxa do lote, e o mesmo arquivo reenviado com outra taxa nao e correcao de
+# nada (a taxa e propriedade do lote, Fase 0).
+CAMPOS_BRUTOS = ("cliente_id", "data", "data_valida", "valor", "moeda", "canal",
+                 "tipo", "contraparte", "observacao")
+
 
 @dataclass
 class ResultadoIngestao:
@@ -34,12 +41,18 @@ class ResultadoIngestao:
     operacoes_brutas: int
     operacoes_inseridas: int
     duplicatas_ignoradas: int
+    operacoes_corrigidas: int = 0
+    # clientes com operacao nova ou corrigida neste lote (antes E depois da
+    # correcao, se ela mudou o cliente da operacao) - o delta da Fase 5
+    clientes_afetados: frozenset[str] = frozenset()
 
     def __str__(self) -> str:
         return (
             f"lote {self.lote_id} ({self.origem}): {self.operacoes_brutas} brutas, "
             f"{self.operacoes_inseridas} inseridas, "
-            f"{self.duplicatas_ignoradas} ignoradas"
+            f"{self.operacoes_corrigidas} corrigidas, "
+            f"{self.duplicatas_ignoradas} ignoradas | "
+            f"{len(self.clientes_afetados)} clientes afetados"
         )
 
 
@@ -50,10 +63,16 @@ def _sha256(caminho: Path) -> str:
 def ingerir(conn: sqlite3.Connection, caminho: Path | str = DADOS_PATH) -> ResultadoIngestao:
     """Le o arquivo, aplica a limpeza da entrega e grava operacoes + o lote.
 
-    `duplicatas_ignoradas` conta TUDO que estava no arquivo e nao virou linha
-    nova - tanto a duplicata interna ao arquivo (as 5 que a limpeza remove por
-    id) quanto a operacao que ja existia de uma ingestao anterior. Sao a mesma
-    coisa do ponto de vista do store: um id que ja tem dono.
+    Cada operacao do arquivo cai em um de tres casos:
+      - id novo              -> inserida
+      - id existente, campos brutos iguais -> ignorada (reenvio)
+      - id existente, algum campo bruto diferente -> CORRIGIDA (Fase 5.2): o
+        UPDATE grava a versao nova com este lote, e o trigger do schema guarda
+        a anterior em operacoes_historico. A ingestao nao precisa lembrar disso.
+
+    `duplicatas_ignoradas` conta o que estava no arquivo e nao mudou nada: a
+    duplicata interna ao arquivo (as 5 que a limpeza remove por id) e o reenvio
+    de operacao ja conhecida.
     """
     caminho = Path(caminho)
     df, taxa = carregar_e_limpar(caminho)
@@ -96,22 +115,39 @@ def ingerir(conn: sqlite3.Connection, caminho: Path | str = DADOS_PATH) -> Resul
         for _, row in df.iterrows()
     ]
 
-    antes = conn.total_changes
-    # OR IGNORE = idempotencia: reingerir o mesmo arquivo nao duplica nem falha.
-    # O outro lado dessa moeda esta documentado no ROADMAP (divida 5.2):
-    # reingerir um arquivo CORRIGIDO tambem nao atualiza a operacao existente.
-    # E deliberado nesta fase - fato ingerido nao muda em silencio.
+    existentes = {
+        r["id"]: r for r in conn.execute(f"SELECT id, {', '.join(CAMPOS_BRUTOS)} FROM operacoes")
+    }
+    novas, correcoes, afetados = [], [], set()
+    for linha in linhas:
+        atual = existentes.get(linha[0])
+        # linha = (id, lote_id, cliente_id, data, data_valida, valor, moeda,
+        #          valor_brl, canal, tipo, contraparte, observacao)
+        brutos = (linha[2], linha[3], linha[4], linha[5], linha[6], *linha[8:])
+        if atual is None:
+            novas.append(linha)
+            afetados.add(linha[2])
+        elif tuple(atual[c] for c in CAMPOS_BRUTOS) != brutos:
+            correcoes.append(linha)
+            afetados.update({linha[2], atual["cliente_id"]})
+
     conn.executemany(
-        f"INSERT OR IGNORE INTO operacoes ({COLUNAS_INSERT}) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        linhas,
+        f"INSERT INTO operacoes ({COLUNAS_INSERT}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        novas,
     )
-    inseridas = conn.total_changes - antes
+    # a versao anterior vai para operacoes_historico pelo trigger do schema
+    conn.executemany(
+        "UPDATE operacoes SET lote_id = ?, cliente_id = ?, data = ?, data_valida = ?, "
+        "valor = ?, moeda = ?, valor_brl = ?, canal = ?, tipo = ?, contraparte = ?, "
+        "observacao = ? WHERE id = ?",
+        [(*l[1:], l[0]) for l in correcoes],
+    )
+    ignoradas = operacoes_brutas - len(novas) - len(correcoes)
 
     conn.execute(
         "UPDATE lotes_ingestao SET operacoes_inseridas = ?, duplicatas_ignoradas = ? "
         "WHERE id = ?",
-        (inseridas, operacoes_brutas - inseridas, lote_id),
+        (len(novas), ignoradas, lote_id),
     )
     conn.commit()
 
@@ -119,8 +155,10 @@ def ingerir(conn: sqlite3.Connection, caminho: Path | str = DADOS_PATH) -> Resul
         lote_id=lote_id,
         origem=str(caminho),
         operacoes_brutas=operacoes_brutas,
-        operacoes_inseridas=inseridas,
-        duplicatas_ignoradas=operacoes_brutas - inseridas,
+        operacoes_inseridas=len(novas),
+        duplicatas_ignoradas=ignoradas,
+        operacoes_corrigidas=len(correcoes),
+        clientes_afetados=frozenset(afetados),
     )
 
 

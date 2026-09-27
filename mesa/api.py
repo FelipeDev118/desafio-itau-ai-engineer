@@ -24,11 +24,11 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import mesa  # noqa: F401  - poe nivel_2/ no sys.path
 from confronto import _normalizar_nivel
-from mesa import db, metricas
+from mesa import db, metricas, repositorio
 
 Estado = Literal["novo", "triado", "em_analise", "concluido"]
 TipoDecisao = Literal["concordo", "discordo", "escalar"]
@@ -93,10 +93,15 @@ class ItemFila(BaseModel):
     criado_em: str
     # a decisao do analista, quando o caso ja foi concluido (Fase 4)
     decisao: TipoDecisao | None
+    # Fase 5.1: o alerta anterior do cliente que este substituiu (chegou dado
+    # novo), e o que o substituiu - None nos dois = unico alerta do cliente
+    substitui_alerta_id: int | None
+    substituido_por: int | None
 
 
 class Fila(BaseModel):
-    execucao_id: int
+    # None = a fila de trabalho: os alertas VIGENTES, de qualquer execucao
+    execucao_id: int | None
     total: int
     itens: list[ItemFila]
     proximo_cursor: str | None
@@ -207,6 +212,10 @@ class Caso(BaseModel):
     # esquema v6 - transicoes anteriores nao foram gravadas e nao sao inventadas.
     decisao: Decisao | None
     trilha: list[TransicaoRegistrada]
+    # Fase 5.1: a decisao mais recente tomada num alerta ANTERIOR deste cliente
+    # (o que este substituiu, ou antes). O analista ve o que ja se decidiu sobre
+    # o cliente antes de o dado novo chegar - mas decide de novo, sobre o novo.
+    decisao_anterior: Decisao | None
 
 
 class Evidencia(BaseModel):
@@ -227,10 +236,17 @@ class Transicao(BaseModel):
     analista_id: str | None
 
 
+# Limites de tamanho: decisao e trilha sao append-only - o que entra fica para
+# sempre. A tela ja limitava o motivo a 2000; a API passou a limitar tambem
+# (achado da auditoria: ela aceitava qualquer tamanho).
+MAX_MOTIVO = 2000
+MAX_ANALISTA = 100
+
+
 class NovaDecisao(BaseModel):
     decisao: TipoDecisao
-    nivel_risco: str | None = None
-    motivo: str | None = None
+    nivel_risco: str | None = Field(None, max_length=20)
+    motivo: str | None = Field(None, max_length=MAX_MOTIVO)
     # O parecer que a tela MOSTROU ao analista. Obrigatorio mesmo quando null
     # (caso sem parecer): o cliente tem que declarar o que viu, nao deixar a API
     # supor. Se o parecer atual do alerta for outro, a decisao e recusada.
@@ -287,7 +303,7 @@ class Tempo(BaseModel):
 
 
 class Metricas(BaseModel):
-    execucao_id: int
+    execucao_id: int | None
     casos: int
     decididos: int
     por_decisao: dict[str, int]
@@ -392,7 +408,8 @@ _SELECT_ALERTA = f"""
            a.total_sinalizacoes, a.volume_total_brl, a.qtd_operacoes,
            a.analista_id, a.criado_em, a.execucao_id,
            p.nivel_risco AS nivel_risco_agente, ad.fundamentado,
-           d.decisao
+           d.decisao, a.substitui_alerta_id,
+           (SELECT s.id FROM alertas s WHERE s.substitui_alerta_id = a.id) AS substituido_por
     FROM alertas a
     LEFT JOIN pareceres p ON p.id = ({_PARECER_ATUAL})
     LEFT JOIN aderencia ad ON ad.parecer_id = p.id
@@ -422,6 +439,8 @@ def _item_fila(linha: sqlite3.Row) -> ItemFila:
         analista_id=linha["analista_id"],
         criado_em=linha["criado_em"],
         decisao=linha["decisao"],
+        substitui_alerta_id=linha["substitui_alerta_id"],
+        substituido_por=linha["substituido_por"],
     )
 
 
@@ -430,6 +449,41 @@ def _alerta_ou_404(conn: sqlite3.Connection, alerta_id: int) -> sqlite3.Row:
     if linha is None:
         raise HTTPException(404, f"alerta {alerta_id} não existe")
     return linha
+
+
+def _lote_da_execucao(conn: sqlite3.Connection, execucao_id: int) -> int:
+    return conn.execute(
+        "SELECT lote_id FROM execucoes_regras WHERE id = ?", (execucao_id,)
+    ).fetchone()[0]
+
+
+def _decisao_de(conn: sqlite3.Connection, alerta_id: int) -> "Decisao | None":
+    d = conn.execute("SELECT * FROM decisoes WHERE alerta_id = ?", (alerta_id,)).fetchone()
+    return None if d is None else Decisao(
+        decisao=d["decisao"], analista_id=d["analista_id"],
+        nivel_risco_analista=d["nivel_risco_analista"], nivel_risco_agente=d["nivel_risco_agente"],
+        motivo=d["motivo"], parecer_id=d["parecer_id"], decidido_em=d["decidido_em"],
+    )
+
+
+def _permitidas(alerta: sqlite3.Row) -> list[str]:
+    """As transicoes do POST /estado a partir do estado atual. Um alerta
+    SUBSTITUIDO (chegou dado novo, ha um alerta vigente para o cliente) so pode
+    ser devolvido - pega-lo seria trabalhar sobre a base velha."""
+    permitidas = sorted(d for o, d in TRANSICOES if o == alerta["estado"])
+    if alerta["substituido_por"] is not None:
+        permitidas = [d for d in permitidas if d != "em_analise"]
+    return permitidas
+
+
+def _recusar_se_substituido(alerta: sqlite3.Row, acao: str) -> None:
+    if alerta["substituido_por"] is not None:
+        raise HTTPException(
+            409,
+            f"o alerta {alerta['alerta_id']} do caso {alerta['cliente_id']} foi substituído "
+            f"pelo alerta {alerta['substituido_por']} (chegaram operações novas) - "
+            f"{acao} no caso atual",
+        )
 
 
 def _parecer_atual_id(conn: sqlite3.Connection, alerta_id: int) -> int | None:
@@ -493,15 +547,22 @@ def fila(
     cursor: str | None = None,
     conn: sqlite3.Connection = Depends(conexao),
 ):
-    """A fila do analista, na ordem do ranking das regras.
+    """A fila do analista, na ordem do ranking das regras: por padrao, o alerta
+    vigente de cada cliente; com `execucao_id`, os alertas daquela execucao.
 
     `origem=regra` por padrao: a fila de trabalho nao mostra cliente sem
     sinalizacao. Os de controle existem para medir falso negativo, nao para
     ocupar o analista - `origem=todos` os inclui.
     """
-    execucao_id = _execucao(conn, execucao_id)
-
-    filtros, params = ["a.execucao_id = ?"], [execucao_id]
+    # Sem execucao_id: os alertas VIGENTES (Fase 5.1). "A execucao mais recente"
+    # deixou de ser o retrato completo quando a execucao passou a poder ser
+    # incremental - ela pode ter so os 2 clientes que mudaram.
+    if execucao_id is None:
+        _execucao(conn, None)  # 503 se o store nao tem execucao nenhuma
+        filtros, params = [repositorio.VIGENTE], []
+    else:
+        execucao_id = _execucao(conn, execucao_id)
+        filtros, params = ["a.execucao_id = ?"], [execucao_id]
     if estado is not None:
         filtros.append("a.estado = ?")
         params.append(estado)
@@ -565,13 +626,10 @@ def caso(alerta_id: int, conn: sqlite3.Connection = Depends(conexao)):
             flag_valor_atipico=o["id"] in atipicas,
             em_dia_de_fracionamento=o["data"] in dias_frac,
         )
-        for o in conn.execute(
-            # operacao sem data vai para o FIM, nao para o topo (padrao do SQLite
-            # em ASC): e a menos informativa para quem le o caso em ordem
-            "SELECT id, data, valor, moeda, valor_brl, canal, tipo, contraparte "
-            "FROM operacoes WHERE cliente_id = ? ORDER BY data IS NULL, data, id",
-            (cliente_id,),
-        )
+        # A base COMO ERA no lote em que as regras rodaram para este alerta, nao
+        # a de hoje (Fase 5.2): um caso decidido ontem nao pode aparecer com uma
+        # operacao que chegou - ou foi corrigida - depois. Sem data vai para o fim.
+        for o in repositorio.operacoes_no_lote(conn, _lote_da_execucao(conn, execucao_id), cliente_id)
     ]
 
     parecer, aderencia = None, None
@@ -616,12 +674,14 @@ def caso(alerta_id: int, conn: sqlite3.Connection = Depends(conexao)):
         )
     ]
 
-    d = conn.execute("SELECT * FROM decisoes WHERE alerta_id = ?", (alerta_id,)).fetchone()
-    decisao = None if d is None else Decisao(
-        decisao=d["decisao"], analista_id=d["analista_id"],
-        nivel_risco_analista=d["nivel_risco_analista"], nivel_risco_agente=d["nivel_risco_agente"],
-        motivo=d["motivo"], parecer_id=d["parecer_id"], decidido_em=d["decidido_em"],
-    )
+    decisao = _decisao_de(conn, alerta_id)
+    decisao_anterior = None
+    anterior = alerta["substitui_alerta_id"]
+    while anterior is not None and decisao_anterior is None:
+        decisao_anterior = _decisao_de(conn, anterior)
+        anterior = conn.execute(
+            "SELECT substitui_alerta_id FROM alertas WHERE id = ?", (anterior,)
+        ).fetchone()[0]
     trilha = [
         TransicaoRegistrada(
             estado_anterior=r["estado_anterior"], estado_novo=r["estado_novo"],
@@ -640,9 +700,10 @@ def caso(alerta_id: int, conn: sqlite3.Connection = Depends(conexao)):
         aderencia=aderencia,
         operacoes=operacoes,
         historico_parecer=historico,
-        transicoes_permitidas=sorted(d for o, d in TRANSICOES if o == alerta["estado"]),
+        transicoes_permitidas=_permitidas(alerta),
         decisao=decisao,
         trilha=trilha,
+        decisao_anterior=decisao_anterior,
     )
 
 
@@ -683,9 +744,7 @@ def mudar_estado(
     carrega apenas o estado de destino. Duas fontes para o mesmo fato e como
     duas verdades comecam.
     """
-    analista = (x_analista or "").strip()
-    if not analista:
-        raise HTTPException(400, "header X-Analista obrigatório para mudar o estado de um caso")
+    analista = _analista(x_analista, "mudar o estado de um caso")
 
     alerta = _alerta_ou_404(conn, alerta_id)
     atual, dono = alerta["estado"], alerta["analista_id"]
@@ -693,6 +752,9 @@ def mudar_estado(
     # nas mensagens, o caso pelo nome que o analista conhece (CLI-028), nao
     # pelo id interno do alerta
     caso_nome = alerta["cliente_id"]
+
+    if destino == "em_analise":
+        _recusar_se_substituido(alerta, "pegue o caso")
 
     # Caso ja pego por outro: e o conflito mais comum (tela desatualizada), e
     # merece dizer QUEM pegou, nao "transicao em_analise -> em_analise".
@@ -749,6 +811,15 @@ def mudar_estado(
     )
 
 
+def _analista(x_analista: str | None, para_que: str) -> str:
+    analista = (x_analista or "").strip()
+    if not analista:
+        raise HTTPException(400, f"header X-Analista obrigatório para {para_que}")
+    if len(analista) > MAX_ANALISTA:
+        raise HTTPException(400, f"header X-Analista com mais de {MAX_ANALISTA} caracteres")
+    return analista
+
+
 def _registrar_transicao(conn: sqlite3.Connection, alerta_id: int, de: str, para: str,
                          analista: str) -> None:
     """Uma linha na trilha. Chamada DENTRO da transacao de quem mudou o estado -
@@ -791,9 +862,7 @@ def decidir(
       discordo : exige nivel_risco (o que o analista atribui) e motivo
       escalar  : exige motivo; nivel_risco opcional
     """
-    analista = (x_analista or "").strip()
-    if not analista:
-        raise HTTPException(400, "header X-Analista obrigatório para registrar uma decisão")
+    analista = _analista(x_analista, "registrar uma decisão")
 
     # --- o corpo, sozinho, faz sentido? (422: o pedido esta mal formado) ---
     motivo = (corpo.motivo or "").strip() or None
@@ -812,6 +881,7 @@ def decidir(
     caso_nome, estado, dono = alerta["cliente_id"], alerta["estado"], alerta["analista_id"]
     if estado == "concluido":
         raise HTTPException(409, f"o caso {caso_nome} já foi decidido")
+    _recusar_se_substituido(alerta, "decida")
     if estado != "em_analise":
         raise HTTPException(
             409, f"o caso {caso_nome} está '{estado}' - pegue o caso antes de decidir"
@@ -931,7 +1001,11 @@ def ver_metricas(
     `linha_de_base_min` e o tempo de analise por caso SEM a ferramenta. O store
     nao o tem e nao o inventa: so com ele informado a resposta traz economia, e
     traz junto a procedencia ("informada, nao medida")."""
-    return metricas.calcular(conn, _execucao(conn, execucao_id), linha_de_base_min)
+    # sem execucao_id: todas as decisoes do store, sobre os casos vigentes
+    alvo = None if execucao_id is None else _execucao(conn, execucao_id)
+    if alvo is None:
+        _execucao(conn, None)  # 503 se nao ha execucao nenhuma
+    return metricas.calcular(conn, alvo, linha_de_base_min)
 
 
 # ============================================================================
@@ -944,6 +1018,21 @@ def raiz():
     return RedirectResponse("/app/")
 
 
+class _TelaSemCacheVelho(StaticFiles):
+    """Os arquivos da tela com `Cache-Control: no-cache`.
+
+    Sem isso o navegador reusa o app.js antigo SEM perguntar ao servidor
+    (cache heuristico, pelo Last-Modified): visto de verdade na Fase 4 - depois
+    de atualizar o codigo, o index.html novo mostrava o botao "Metricas", mas o
+    app.js em cache nao conhecia a rota e o clique nao fazia nada. no-cache NAO
+    desliga o cache: obriga a revalidar, e sem mudanca a resposta e um 304."""
+
+    async def get_response(self, path, scope):
+        resposta = await super().get_response(path, scope)
+        resposta.headers["Cache-Control"] = "no-cache"
+        return resposta
+
+
 # Montado por ULTIMO: um mount captura o prefixo inteiro, e registrado antes das
 # rotas poderia sombrear alguma. html=True serve o index.html em /app/.
-app.mount("/app", StaticFiles(directory=WEB_DIR, html=True), name="tela")
+app.mount("/app", _TelaSemCacheVelho(directory=WEB_DIR, html=True), name="tela")

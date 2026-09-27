@@ -24,15 +24,27 @@ ESQUEMA_SQL = Path(__file__).resolve().parent / "esquema.sql"
 # Ate a v5, alterar o esquema significava apagar o banco e reingerir: o store so
 # continha dado sintetico reprocessavel. A v6 (Fase 4) grava DECISAO DE ANALISTA,
 # que nao se reprocessa - dai em diante o banco e migrado, nao reconstruido.
-VERSAO_ESQUEMA = 6
+VERSAO_ESQUEMA = 7
 
-# Versoes a partir das quais aplicar o DDL atual basta para chegar a
-# VERSAO_ESQUEMA: o salto so ADICIONA tabelas/indices/triggers (tudo IF NOT
-# EXISTS). Uma versao fora daqui mudou coluna de tabela existente - e
-# `CREATE TABLE IF NOT EXISTS` nao altera tabela que ja existe. Carimbar a versao
-# nova num banco desses faria o codigo acreditar em colunas que nao estao la.
-#   5 -> 6: + transicoes, + decisoes (Fase 4)
-MIGRAVEIS_POR_ADICAO = {5}
+# Como levar um banco da versao N para N+1. Cada entrada e o que o DDL completo
+# (esquema.sql, todo IF NOT EXISTS) NAO consegue fazer sozinho num banco que ja
+# existe: `CREATE TABLE IF NOT EXISTS` nao altera tabela existente, entao coluna
+# nova em tabela velha precisa de ALTER. Tabela, indice e trigger novos vem do
+# DDL completo, aplicado logo depois.
+#
+# Uma versao que nao esta aqui nao tem migracao, e o banco e recusado - carimbar
+# a versao nova sem as colunas faria o codigo ler o que nao existe.
+#
+# O teste que sustenta isto: banco v5 e v6 (DDL congelado em tests/esquemas/)
+# migrados para a versao atual tem a MESMA estrutura de um banco criado agora.
+MIGRACOES: dict[int, list[str]] = {
+    5: [],  # 5 -> 6: so tabelas novas (transicoes, decisoes)
+    6: [    # 6 -> 7: substituicao de alertas e escopo da execucao (Fase 5)
+        "ALTER TABLE execucoes_regras ADD COLUMN escopo TEXT NOT NULL DEFAULT 'completa' "
+        "CHECK (escopo IN ('completa', 'incremental'))",
+        "ALTER TABLE alertas ADD COLUMN substitui_alerta_id INTEGER REFERENCES alertas(id)",
+    ],
+}
 
 
 def agora_utc() -> str:
@@ -44,7 +56,7 @@ def agora_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def conectar(caminho: Path | str = CAMINHO_PADRAO, criar_esquema: bool = True,
+def conectar(caminho: Path | str | None = None, criar_esquema: bool = True,
              check_same_thread: bool = True) -> sqlite3.Connection:
     """Abre (e cria, se preciso) o banco com os PRAGMAs que o resto do codigo assume.
 
@@ -61,7 +73,12 @@ def conectar(caminho: Path | str = CAMINHO_PADRAO, criar_esquema: bool = True,
     a PROPRIA conexao, que troca de thread mas nunca e usada por duas ao mesmo
     tempo. Compartilhar uma conexao entre requisicoes continuaria sendo erro.
     """
-    caminho = Path(caminho)
+    # None = CAMINHO_PADRAO lido AGORA. Com `caminho=CAMINHO_PADRAO` na
+    # assinatura, o padrao era fixado na importacao do modulo, e trocar
+    # db.CAMINHO_PADRAO depois nao valia para quem chama conectar() sem
+    # argumento - numa auditoria, um script que "apontava para um banco
+    # temporario" escreveu no store real. Mesmo criterio que a API ja seguia.
+    caminho = Path(CAMINHO_PADRAO if caminho is None else caminho)
     em_memoria = str(caminho) == ":memory:"
     if not em_memoria:
         caminho.parent.mkdir(parents=True, exist_ok=True)
@@ -81,13 +98,35 @@ def conectar(caminho: Path | str = CAMINHO_PADRAO, criar_esquema: bool = True,
     return conn
 
 
-def aplicar_esquema(conn: sqlite3.Connection) -> None:
-    """Cria o esquema num banco novo, migra um banco de versao aditiva, e nao faz
-    nada num banco ja atualizado (todo o DDL usa IF NOT EXISTS). E o que permite
-    chamar `conectar()` sem saber se o banco existe.
+def abrir_para_leitura(caminho: Path | str | None = None) -> sqlite3.Connection:
+    """Abre o store SEM aplicar o esquema, e recusa versao diferente.
 
-    Recusa o resto: banco mais novo que o codigo, e banco antigo cujo salto nao e
-    aditivo (ver MIGRAVEIS_POR_ADICAO)."""
+    Para quem so LE (verificar_ambiente --store, confronto --store). `conectar()`
+    migra o banco ao abrir - num comando de verificacao isso e escrita
+    escondida: rodar a verificacao ja migrou o store real enquanto um servidor
+    de codigo anterior lia dele, e o servidor passou a responder 503. Medido,
+    nao suposto (Fase 5). Mesmo criterio da API."""
+    conn = conectar(caminho, criar_esquema=False)
+    versao = conn.execute("PRAGMA user_version").fetchone()[0]
+    if versao != VERSAO_ESQUEMA:
+        conn.close()
+        raise RuntimeError(
+            f"store na versao de esquema {versao}, este codigo espera {VERSAO_ESQUEMA} "
+            "- rode: python -m mesa.db"
+        )
+    return conn
+
+
+def aplicar_esquema(conn: sqlite3.Connection) -> None:
+    """Cria o esquema num banco novo, migra um banco antigo, e nao faz nada num
+    banco ja atualizado (todo o DDL usa IF NOT EXISTS). E o que permite chamar
+    `conectar()` sem saber se o banco existe.
+
+    A migracao e UMA transacao: os ALTER de cada versao, o DDL completo e o
+    carimbo da versao. Falhou no meio, o banco fica como estava - nunca com
+    metade das colunas e a versao nova.
+
+    Recusa: banco mais novo que o codigo, e banco antigo sem caminho em MIGRACOES."""
     versao_atual = conn.execute("PRAGMA user_version").fetchone()[0]
     if versao_atual > VERSAO_ESQUEMA:
         raise RuntimeError(
@@ -96,15 +135,30 @@ def aplicar_esquema(conn: sqlite3.Connection) -> None:
             "escrever num esquema que ele nao entende"
         )
     # 0 = banco recem-criado (ou vazio): o DDL inteiro cria tudo do zero
-    if versao_atual not in (0, VERSAO_ESQUEMA) and versao_atual not in MIGRAVEIS_POR_ADICAO:
-        raise RuntimeError(
-            f"banco na versao de esquema {versao_atual}, codigo espera {VERSAO_ESQUEMA}, "
-            "e o salto nao e so aditivo - nao ha migracao para ele. Reconstrua o "
-            "store (python -m mesa.ingestao && python -m mesa.regras_run && ...)"
-        )
-    conn.executescript(ESQUEMA_SQL.read_text(encoding="utf-8"))
-    conn.execute(f"PRAGMA user_version = {VERSAO_ESQUEMA}")
-    conn.commit()
+    passos: list[str] = []
+    if versao_atual not in (0, VERSAO_ESQUEMA):
+        for v in range(versao_atual, VERSAO_ESQUEMA):
+            if v not in MIGRACOES:
+                raise RuntimeError(
+                    f"banco na versao de esquema {versao_atual}, codigo espera "
+                    f"{VERSAO_ESQUEMA}, e nao ha migracao a partir da v{v}. Reconstrua o "
+                    "store (python -m mesa.ingestao && python -m mesa.regras_run && ...)"
+                )
+            passos.extend(MIGRACOES[v])
+
+    script = "\n".join([
+        "BEGIN;",
+        *(f"{sql};" for sql in passos),
+        ESQUEMA_SQL.read_text(encoding="utf-8"),
+        f"PRAGMA user_version = {VERSAO_ESQUEMA};",
+        "COMMIT;",
+    ])
+    try:
+        conn.executescript(script)
+    except Exception:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
 
 
 if __name__ == "__main__":

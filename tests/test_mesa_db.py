@@ -104,39 +104,19 @@ def test_estado_de_alerta_invalido_e_rejeitado(tmp_path):
 
 
 # ============================================================================
-# Passo 4.0 - migracao v5 -> v6
+# Passos 4.0 e 5.0 - migracao por versao
 # ============================================================================
 
-MARCO_FASE_4 = "-- FASE 4 - O HUMANO DECIDE"
+ESQUEMAS = db.RAIZ / "tests" / "esquemas"
 
 
-def _ddl_v5() -> str:
-    """O DDL da v5 e o atual sem a secao da Fase 4 - que e exatamente a
-    afirmacao de que o salto e aditivo. O teste abaixo prende essa afirmacao."""
-    ddl = db.ESQUEMA_SQL.read_text(encoding="utf-8")
-    return ddl[: ddl.index(MARCO_FASE_4)].rsplit("-- ====", 1)[0]
-
-
-def test_secao_da_fase_4_so_adiciona(tmp_path):
-    """Se alguem alterar uma tabela antiga na v6, o 5 em MIGRAVEIS_POR_ADICAO
-    vira mentira. A secao nova so pode CRIAR coisa nova."""
-    ddl = db.ESQUEMA_SQL.read_text(encoding="utf-8")
-    secao = ddl[ddl.index(MARCO_FASE_4):]
-    sem_comentario = "\n".join(l for l in secao.splitlines() if not l.strip().startswith("--"))
-    comandos = [c.strip() for c in sem_comentario.split(";") if c.strip()]
-    assert comandos, "secao da Fase 4 vazia?"
-    for c in comandos:
-        # corpo de trigger (SELECT RAISE...) e o END que o fecha sao parte do CREATE TRIGGER
-        if c.upper().startswith(("SELECT RAISE", "END")):
-            continue
-        assert c.upper().startswith(("CREATE TABLE IF NOT EXISTS", "CREATE INDEX IF NOT EXISTS",
-                                     "CREATE TRIGGER IF NOT EXISTS")), c
-
-
-def _banco_v5(caminho):
+def _banco_na_versao(caminho, versao: int):
+    """Um banco criado com o DDL CONGELADO daquela versao (copiado do git no dia
+    em que a versao seguinte nasceu) - nao reconstruido a partir do DDL atual,
+    que ja nao e o que existia."""
     conn = sqlite3.connect(caminho)
-    conn.executescript(_ddl_v5())
-    conn.execute("PRAGMA user_version = 5")
+    conn.executescript((ESQUEMAS / f"esquema_v{versao}.sql").read_text(encoding="utf-8"))
+    conn.execute(f"PRAGMA user_version = {versao}")
     conn.execute(
         "INSERT INTO lotes_ingestao (id, origem, sha256_arquivo, taxa_cambio_usd_brl, "
         "operacoes_brutas, operacoes_inseridas, duplicatas_ignoradas, "
@@ -147,31 +127,86 @@ def _banco_v5(caminho):
     conn.close()
 
 
-def test_banco_v5_migra_para_v6_sem_perder_dado(tmp_path):
-    caminho = tmp_path / "mesa.db"
-    _banco_v5(caminho)
+def _estrutura(conn) -> dict:
+    """Colunas (nome, tipo, not null, default, pk), FKs, indices com suas
+    colunas e o SQL dos triggers. O texto do CREATE TABLE fica de fora de
+    proposito: um ALTER ADD COLUMN reescreve o texto de outro jeito, e o que
+    importa e o que o banco FAZ, nao como o comando foi digitado."""
+    est = {}
+    for (tabela,) in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    ):
+        est[f"t:{tabela}"] = (
+            [tuple(r)[1:] for r in conn.execute(f"PRAGMA table_info({tabela})")],
+            sorted(tuple(r)[2:5] for r in conn.execute(f"PRAGMA foreign_key_list({tabela})")),
+        )
+    for nome, tabela in conn.execute(
+        "SELECT name, tbl_name FROM sqlite_master WHERE type='index' AND sql IS NOT NULL"
+    ):
+        est[f"i:{nome}"] = (tabela, [tuple(r)[2] for r in conn.execute(f"PRAGMA index_info({nome})")])
+    for nome, sql in conn.execute("SELECT name, sql FROM sqlite_master WHERE type='trigger'"):
+        est[f"g:{nome}"] = sql
+    return est
 
-    conn = db.conectar(caminho)
-    tabelas = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"transicoes", "decisoes"} <= tabelas
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 6
-    assert conn.execute("SELECT COUNT(*) FROM lotes_ingestao").fetchone()[0] == 1
+
+@pytest.mark.parametrize("versao", [5, 6])
+def test_banco_antigo_migrado_tem_a_estrutura_de_um_banco_novo(tmp_path, versao):
+    """<<< aceite do 5.0 >>> A garantia que faz a migracao ser confiavel: nao
+    "as tabelas novas existem", mas "o banco migrado e indistinguivel de um
+    criado agora" - colunas, tipos, defaults, FKs, indices e triggers."""
+    _banco_na_versao(tmp_path / "velho.db", versao)
+    migrado = db.conectar(tmp_path / "velho.db")
+    novo = db.conectar(tmp_path / "novo.db")
+    assert _estrutura(migrado) == _estrutura(novo)
+    assert migrado.execute("PRAGMA user_version").fetchone()[0] == db.VERSAO_ESQUEMA
+    assert migrado.execute("SELECT COUNT(*) FROM lotes_ingestao").fetchone()[0] == 1
+    migrado.close()
+    novo.close()
+
+
+def test_toda_versao_desde_a_v5_tem_migracao():
+    assert set(range(5, db.VERSAO_ESQUEMA)) <= set(db.MIGRACOES)
+
+
+def test_coluna_nova_da_migracao_mantem_o_check(tmp_path):
+    """O ALTER da v7 traz um CHECK; num banco migrado ele tem que valer igual."""
+    _banco_na_versao(tmp_path / "velho.db", 6)
+    conn = db.conectar(tmp_path / "velho.db")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO execucoes_regras (lote_id, versao_regras, parametros_json, executado_em, "
+            "operacoes_avaliadas, clientes_fracionamento, operacoes_atipicas, escopo) "
+            "VALUES (1, 'r1', '{}', 'x', 1, 0, 0, 'parcial')"
+        )
     conn.close()
 
 
-def test_banco_de_versao_antiga_nao_aditiva_e_recusado(tmp_path):
-    """A brecha que existia: aplicar_esquema() num banco v4 so carimbava a versao
-    nova - e a coluna aderencia.marcas_json (v5) nao aparecia, porque CREATE TABLE
-    IF NOT EXISTS nao altera tabela existente. O codigo passava a ler uma coluna
-    que nao estava la."""
+def test_migracao_que_falha_no_meio_nao_deixa_o_banco_pela_metade(tmp_path, monkeypatch):
+    """Os dois ALTER da v7 numa transacao so, com o carimbo da versao: se o
+    segundo falha, o primeiro tambem nao fica."""
+    _banco_na_versao(tmp_path / "velho.db", 6)
+    monkeypatch.setitem(db.MIGRACOES, 6, [db.MIGRACOES[6][0], "ALTER TABLE nao_existe ADD COLUMN x"])
+    with pytest.raises(sqlite3.OperationalError):
+        db.conectar(tmp_path / "velho.db")
+    bruta = sqlite3.connect(tmp_path / "velho.db")
+    colunas = [r[1] for r in bruta.execute("PRAGMA table_info(execucoes_regras)")]
+    assert "escopo" not in colunas
+    assert bruta.execute("PRAGMA user_version").fetchone()[0] == 6
+    bruta.close()
+
+
+def test_banco_de_versao_sem_migracao_e_recusado(tmp_path):
+    """A brecha fechada no 4.0: aplicar_esquema() num banco v4 so carimbava a
+    versao nova - e a coluna aderencia.marcas_json (v5) nao aparecia, porque
+    CREATE TABLE IF NOT EXISTS nao altera tabela existente."""
     caminho = tmp_path / "mesa.db"
-    _banco_v5(caminho)
+    _banco_na_versao(caminho, 5)
     bruta = sqlite3.connect(caminho)
     bruta.execute("PRAGMA user_version = 4")
     bruta.commit()
     bruta.close()
 
-    with pytest.raises(RuntimeError, match="nao e so aditivo"):
+    with pytest.raises(RuntimeError, match="nao ha migracao"):
         db.conectar(caminho)
     bruta = sqlite3.connect(caminho)
     assert bruta.execute("PRAGMA user_version").fetchone()[0] == 4  # nao carimbou
@@ -252,3 +287,34 @@ def test_uma_decisao_por_caso(tmp_path):
     with pytest.raises(sqlite3.IntegrityError, match="UNIQUE"):
         conn.execute(sql, ("bruno",))
     conn.close()
+
+
+def test_verificar_e_confrontar_o_store_nao_migram_o_banco(tmp_path, monkeypatch):
+    """Bug real da Fase 5: `verificar_ambiente.py --store` abria o banco com
+    conectar(), que migra - e migrou o store real de v6 para v7 enquanto um
+    servidor da versao anterior lia dele (que passou a responder 503). Comando
+    de leitura recusa versao diferente e deixa o banco como estava."""
+    import confronto
+    import verificar_ambiente
+
+    caminho = tmp_path / "mesa.db"
+    _banco_na_versao(caminho, 6)
+    monkeypatch.setattr(db, "CAMINHO_PADRAO", caminho)
+
+    for ler in (verificar_ambiente.obter_do_store, confronto.carregar_do_store):
+        with pytest.raises(SystemExit, match="python -m mesa.db"):
+            ler()
+    bruta = sqlite3.connect(caminho)
+    assert bruta.execute("PRAGMA user_version").fetchone()[0] == 6
+    bruta.close()
+
+
+def test_caminho_padrao_e_lido_na_hora_da_chamada(tmp_path, monkeypatch):
+    """Achado da auditoria: `conectar(caminho=CAMINHO_PADRAO)` fixava o padrao
+    na importacao. Um script que trocou db.CAMINHO_PADRAO para um banco
+    temporario e chamou conectar() sem argumento escreveu no store REAL."""
+    alvo = tmp_path / "outro.db"
+    monkeypatch.setattr(db, "CAMINHO_PADRAO", alvo)
+    db.conectar().close()
+    assert alvo.exists()
+    db.abrir_para_leitura().close()

@@ -51,13 +51,15 @@ def nivel_risco_esperado(flag_fracionamento: bool, qtd_atipicas: int) -> str:
 
 
 def carregar_do_store() -> list[dict]:
-    """Os pareceres atuais de cada alerta da execucao mais recente.
+    """Os pareceres atuais de cada alerta VIGENTE (um por cliente - Fase 5.1;
+    "a execucao mais recente" pode ser incremental e ter so o delta).
 
     Devolve a MESMA estrutura que pareceres_lote.json - so os campos que o
     confronto usa - para que o calculo abaixo nao precise saber de onde veio.
     """
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from mesa.db import CAMINHO_PADRAO, conectar
+    from mesa.db import CAMINHO_PADRAO, abrir_para_leitura
+    from mesa.repositorio import VIGENTE
 
     if not CAMINHO_PADRAO.exists():
         raise SystemExit(
@@ -66,9 +68,13 @@ def carregar_do_store() -> list[dict]:
             "&& python -m mesa.triagem"
         )
 
-    conn = conectar(CAMINHO_PADRAO)
+    # so leitura: nao migra o store (ver mesa.db.abrir_para_leitura)
+    try:
+        conn = abrir_para_leitura(CAMINHO_PADRAO)
+    except RuntimeError as erro:
+        raise SystemExit(str(erro))
     linhas = conn.execute(
-        """
+        f"""
         SELECT a.cliente_id, a.sinalizacoes_fracionamento, a.sinalizacoes_valor_atipico,
                p.nivel_risco, p.tipologia_suspeita, p.justificativa, p.erro_parsing
         FROM alertas a
@@ -76,7 +82,7 @@ def carregar_do_store() -> list[dict]:
             SELECT id FROM pareceres WHERE alerta_id = a.id
             ORDER BY criado_em DESC, id DESC LIMIT 1
         )
-        WHERE a.execucao_id = (SELECT MAX(id) FROM execucoes_regras)
+        WHERE {VIGENTE}
         ORDER BY a.total_sinalizacoes DESC, a.volume_total_brl DESC, a.cliente_id ASC
         """
     ).fetchall()

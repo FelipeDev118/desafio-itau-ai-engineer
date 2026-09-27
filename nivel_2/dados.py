@@ -45,7 +45,13 @@ def carregar_e_limpar(path: Path = DADOS_PATH) -> tuple[pd.DataFrame, float]:
     df = pd.DataFrame(raw["operacoes"])
 
     df = df.drop_duplicates(subset=["id"]).copy()
-    df["data"] = pd.to_datetime(df["data"], errors="coerce")
+    # Formato FIXO (ISO, o da base). Sem ele o pandas adivinha pelo primeiro
+    # elemento via dateutil: num arquivo so com datas brasileiras, "05/03/2026"
+    # virava 3 de MAIO e "13/03/2026" virava invalida - medido. Data fora do
+    # formato vira invalida (data_valida=False, visivel e tratada pelas
+    # regras), nunca uma data errada em silencio. Achado na auditoria da Fase 5,
+    # quando arquivos novos passaram a chegar pelo ciclo.
+    df["data"] = pd.to_datetime(df["data"], format="%Y-%m-%d", errors="coerce")
     df["data_valida"] = df["data"].notna()
     df["valor_brl"] = df.apply(
         lambda r: r["valor"] * taxa if r["moeda"] == "USD" else r["valor"],

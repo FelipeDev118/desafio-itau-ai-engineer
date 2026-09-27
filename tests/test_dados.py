@@ -244,3 +244,14 @@ def test_parametro_de_atipicidade_e_realmente_usado():
 
     apertado = {**PARAMETROS_REGRAS, "atipico_fator": 3}
     assert flag_valor_atipico(df, apertado)["atipico"].sum() == 1
+
+
+def test_data_fora_do_formato_iso_vira_invalida_e_nao_data_errada(tmp_path):
+    """Sem formato fixo, o pandas lia "05/03/2026" como 3 de maio (mes primeiro)
+    num arquivo so com datas brasileiras. Para PLD, dia errado e pior que dia
+    ausente: a Regra 1 soma operacoes POR DIA."""
+    caminho = escrever_dataset(tmp_path, [op("OP-1", "CLI-1", "05/03/2026", 100.0),
+                                          op("OP-2", "CLI-1", "13/03/2026", 100.0)])
+    df, _ = carregar_e_limpar(caminho)
+    assert not df["data_valida"].any()
+    assert df["data"].isna().all()

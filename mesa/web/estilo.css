@@ -568,11 +568,42 @@ h1, h2, h3, h4 { margin: 0; text-wrap: balance; }
 
 /* ------------------------------------------------------------- metricas (Fase 4.2 / 4.3) */
 
-.link-metricas { color: var(--acento); font-weight: 550; font-size: 0.86rem; text-decoration: none; }
-.link-metricas:hover { text-decoration: underline; }
+.link-metricas {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--acento);
+  border-radius: 4px;
+  background: var(--superficie);
+  color: var(--acento);
+  font-weight: 600;
+  font-size: 0.84rem;
+  text-decoration: none;
+  transition: background 120ms ease, color 120ms ease;
+}
+.link-metricas .icone { width: 0.95rem; height: 0.95rem; fill: currentColor; }
+.link-metricas:hover { background: var(--acento-suave); }
+.link-metricas:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+/* ativo = o analista esta nas metricas; mesmo preenchimento do botao primario */
+.link-metricas.ativo { background: var(--acento); color: var(--superficie); }
 
-.numeros { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-bottom: 0.9rem; }
-.numero { display: grid; gap: 0.1rem; }
+.numeros {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+.numero {
+  display: grid;
+  gap: 0.15rem;
+  align-content: start;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--linha);
+  border-left: 3px solid var(--acento);
+  border-radius: 4px;
+  background: var(--superficie-2);
+}
 .numero-valor { font-size: 1.7rem; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--tinta); line-height: 1.1; }
 .numero-rotulo { font-size: 0.8rem; color: var(--tinta-2); }
 .numero-detalhe { font-size: 0.74rem; color: var(--tinta-3); }
@@ -586,3 +617,9 @@ h1, h2, h3, h4 { margin: 0; text-wrap: balance; }
 
 .form-base { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0.6rem 0; font-size: 0.84rem; }
 .campo-base { width: 5rem; font: inherit; padding: 0.3rem 0.4rem; border: 1px solid var(--linha-forte); border-radius: 4px; background: var(--superficie); color: var(--tinta); }
+
+/* ------------------------------------------------------------- vigencia (Fase 5.1) */
+.vigencia { margin: 0 0 1.1rem; }
+.vigencia a { color: inherit; font-weight: 600; margin-left: 0.25rem; }
+.alerta-info { background: var(--acento-suave); border-color: var(--acento); }
+.alerta-info strong { color: var(--acento); }

@@ -60,6 +60,18 @@ def test_arquivos_da_tela_saem_com_o_tipo_certo(cliente, arquivo, tipo):
     assert tipo in r.headers["content-type"]
 
 
+@pytest.mark.parametrize("arquivo", ["", "app.js", "logica.js", "estilo.css"])
+def test_arquivos_da_tela_obrigam_o_navegador_a_revalidar(cliente, arquivo):
+    """O bug real da Fase 4: apos atualizar o codigo, o navegador reusou o
+    app.js antigo sem perguntar ao servidor (o log mostrava so o GET do
+    index.html) e o botao Metricas nao fazia nada."""
+    r = cliente.get(f"/app/{arquivo}")
+    assert r.headers["cache-control"] == "no-cache"
+    # e a revalidacao continua barata: sem mudanca, 304
+    etag = r.headers["etag"]
+    assert cliente.get(f"/app/{arquivo}", headers={"If-None-Match": etag}).status_code == 304
+
+
 def test_documentacao_da_api_continua_de_pe(cliente):
     """<<< aceite do 3.0 >>> Montar a tela nao pode sombrear as rotas da API."""
     assert cliente.get("/docs").status_code == 200

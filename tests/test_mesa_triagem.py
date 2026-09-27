@@ -147,6 +147,48 @@ def test_caso_pego_pelo_analista_durante_a_triagem_nao_volta_para_a_fila(conn, m
     assert conn.execute("SELECT COUNT(*) FROM transicoes").fetchone()[0] == 0
 
 
+# ---------- 5.0: o agente le do store, nao do JSON ----------
+
+
+def test_agente_ve_operacao_que_so_existe_no_store(conn, contador_api):
+    """<<< aceite do 5.0 >>> O bug que existia: as ferramentas liam o JSON da
+    entrega. Com uma operacao a mais no store, o hash do CLI-014 nao mudava e o
+    parecer importado era reaproveitado em silencio, sem o agente ver o dado.
+
+    Agora: o CLI-014 paga UMA chamada (a entrada mudou), os outros 29 continuam
+    reaproveitados, e o historico que o agente recebeu conta a operacao nova."""
+    import tools
+
+    importar(conn)
+    conn.execute(
+        "INSERT INTO operacoes (id, lote_id, cliente_id, data, data_valida, valor, moeda, "
+        "valor_brl, canal, tipo, contraparte) VALUES ('OP-99999', 1, 'CLI-014', "
+        "'2026-06-01', 1, 9000.0, 'BRL', 9000.0, 'pix', 'pagamento', 'Nova Contraparte')"
+    )
+    conn.commit()
+    vistos = []
+    original = tools.historico_cliente
+
+    def espiar(cliente_id):
+        r = original(cliente_id)
+        vistos.append((cliente_id, r.get("qtd_operacoes")))
+        return r
+
+    import agente
+    agente_hist = agente.historico_cliente
+    agente.historico_cliente = espiar
+    try:
+        r = triagem.triar(conn, pausa_s=0, verbose=False)
+    finally:
+        agente.historico_cliente = agente_hist
+
+    assert contador_api["n"] == 1 and r.chamadas_api == 1
+    assert r.reaproveitados == 29
+    assert ("CLI-014", 12) in vistos          # 11 do JSON + a do store
+    # e a entrega volta a ler o JSON depois da triagem
+    assert tools.historico_cliente("CLI-014")["qtd_operacoes"] == 11
+
+
 # ---------- 1.5: reaproveitamento ----------
 
 

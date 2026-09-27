@@ -85,22 +85,29 @@ def tempo_em_analise(trilha: list[sqlite3.Row | dict]) -> float | None:
     return total if concluiu else None
 
 
-def calcular(conn: sqlite3.Connection, execucao_id: int,
+def calcular(conn: sqlite3.Connection, execucao_id: int | None,
              linha_de_base_min: float | None = None) -> dict:
+    """`execucao_id=None`: TODAS as decisoes do store - inclusive as tomadas em
+    alertas que depois foram substituidos por dado novo (a decisao foi real e
+    conta) - e `casos` = alertas vigentes. Com execucao_id, so aquela rodada."""
+    from mesa.repositorio import VIGENTE
+
+    filtro, params = ("", ()) if execucao_id is None else ("WHERE a.execucao_id = ?", (execucao_id,))
     decisoes = conn.execute(
-        """
+        f"""
         SELECT d.alerta_id, d.decisao, d.nivel_risco_analista, d.nivel_risco_agente,
                d.parecer_id, a.nivel_risco_regra, ad.fundamentado
         FROM decisoes d
         JOIN alertas a ON a.id = d.alerta_id
         LEFT JOIN aderencia ad ON ad.parecer_id = d.parecer_id
-        WHERE a.execucao_id = ?
+        {filtro}
         ORDER BY d.alerta_id
         """,
-        (execucao_id,),
+        params,
     ).fetchall()
     total_casos = conn.execute(
-        "SELECT COUNT(*) FROM alertas WHERE execucao_id = ?", (execucao_id,)
+        f"SELECT COUNT(*) FROM alertas a WHERE {VIGENTE if execucao_id is None else 'a.execucao_id = ?'}",
+        params,
     ).fetchone()[0]
 
     por_decisao = {d: 0 for d in DECISOES}

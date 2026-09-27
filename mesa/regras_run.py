@@ -38,6 +38,7 @@ from mesa.db import agora_utc, conectar
 @dataclass
 class ResultadoExecucao:
     execucao_id: int
+    escopo: str
     operacoes_avaliadas: int
     clientes_fracionamento: int
     operacoes_atipicas: int
@@ -47,7 +48,7 @@ class ResultadoExecucao:
 
     def __str__(self) -> str:
         return (
-            f"execucao {self.execucao_id}: {self.operacoes_avaliadas} operacoes | "
+            f"execucao {self.execucao_id} ({self.escopo}): {self.operacoes_avaliadas} operacoes | "
             f"{self.clientes_fracionamento} clientes com fracionamento | "
             f"{self.operacoes_atipicas} operacoes atipicas | "
             f"{self.sinalizacoes} sinalizacoes | "
@@ -97,6 +98,14 @@ def _gravar_sinalizacoes(conn: sqlite3.Connection, execucao_id: int, df: pd.Data
     return len(linhas)
 
 
+def _vigentes_por_cliente(conn: sqlite3.Connection) -> dict[str, int]:
+    return {
+        r[0]: r[1] for r in conn.execute(
+            f"SELECT a.cliente_id, a.id FROM alertas a WHERE {repositorio.VIGENTE}"
+        )
+    }
+
+
 def _gravar_alertas(conn: sqlite3.Connection, execucao_id: int, df_regras: pd.DataFrame) -> tuple[int, int]:
     """Um alerta por cliente da base.
 
@@ -107,6 +116,9 @@ def _gravar_alertas(conn: sqlite3.Connection, execucao_id: int, df_regras: pd.Da
     """
     clientes = todos_os_clientes(df_regras)
     agora = agora_utc()
+    # cada alerta novo SUBSTITUI o vigente do cliente (Fase 5.1): o antigo sai
+    # da fila, mas continua existindo com a decisao que tiver
+    vigentes = _vigentes_por_cliente(conn)
     linhas = []
     for _, row in clientes.iterrows():
         frac = int(row["sinalizacoes_fracionamento"])
@@ -120,23 +132,76 @@ def _gravar_alertas(conn: sqlite3.Connection, execucao_id: int, df_regras: pd.Da
             # se a regra "espera alto" muda de definicao, muda nos dois lugares
             nivel_risco_esperado(bool(frac), atip),
             agora,
+            vigentes.get(row["cliente_id"]),
         ))
 
     conn.executemany(
         "INSERT INTO alertas (execucao_id, cliente_id, origem, "
         "sinalizacoes_fracionamento, sinalizacoes_valor_atipico, total_sinalizacoes, "
-        "volume_total_brl, qtd_operacoes, nivel_risco_regra, criado_em) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "volume_total_brl, qtd_operacoes, nivel_risco_regra, criado_em, substitui_alerta_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         linhas,
     )
     de_regra = sum(1 for l in linhas if l[2] == "regra")
     return de_regra, len(linhas) - de_regra
 
 
-def executar(conn: sqlite3.Connection, parametros: dict = PARAMETROS_REGRAS) -> ResultadoExecucao:
+def clientes_do_delta(conn: sqlite3.Connection, desde_lote: int) -> set[str]:
+    """Clientes com operacao nova ou corrigida depois de `desde_lote`.
+
+    A segunda metade pega a correcao que TIROU a operacao de um cliente (ela
+    agora esta em outro): a versao antiga, no historico, guarda o cliente de
+    antes - ele tambem mudou de resultado."""
+    return {
+        r[0] for r in conn.execute(
+            "SELECT cliente_id FROM operacoes WHERE lote_id > ? "
+            "UNION SELECT cliente_id FROM operacoes_historico WHERE substituida_pelo_lote > ?",
+            (desde_lote, desde_lote),
+        )
+    }
+
+
+def planejar(conn: sqlite3.Connection, parametros: dict = PARAMETROS_REGRAS) -> tuple[str, set[str] | None]:
+    """Decide, pelo store, o que a proxima execucao precisa avaliar.
+
+    ('completa', None)         primeira execucao, ou regras/parametros mudaram
+                               desde a ultima - qualquer resultado pode mudar
+    ('incremental', {clientes}) so quem teve operacao nova/corrigida
+    ('nada', set())            nenhum lote novo mexeu em cliente nenhum
+    """
+    ultima = conn.execute(
+        "SELECT lote_id, versao_regras, parametros_json FROM execucoes_regras "
+        "ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    if ultima is None:
+        return "completa", None
+    if (ultima["versao_regras"] != VERSAO_REGRAS
+            or json.loads(ultima["parametros_json"]) != parametros):
+        return "completa", None
+    delta = clientes_do_delta(conn, ultima["lote_id"])
+    return ("incremental", delta) if delta else ("nada", set())
+
+
+def executar(conn: sqlite3.Connection, parametros: dict = PARAMETROS_REGRAS,
+             forcar_completa: bool = False) -> ResultadoExecucao | None:
+    """Roda as regras sobre o que mudou e materializa o resultado.
+
+    Devolve None quando nao ha nada a fazer - nenhuma execucao e gravada. Rodar
+    duas vezes seguidas e, por isso, seguro: a segunda nao cria 30 alertas novos
+    iguais aos anteriores (o que tiraria da fila o trabalho de todo analista)."""
     df = repositorio.operacoes_df(conn)
     if df.empty:
         raise RuntimeError("store vazio: rode a ingestao antes de executar as regras")
+
+    escopo, delta = ("completa", None) if forcar_completa else planejar(conn, parametros)
+    if escopo == "nada":
+        return None
+    if escopo == "incremental":
+        # So vale porque as regras sao POR CLIENTE - o teste
+        # test_regras_sobre_o_delta_sao_as_mesmas_da_base_inteira prende isso.
+        # Uma regra entre clientes (ex.: contraparte compartilhada) quebraria
+        # a igualdade, e ai o delta teria que alargar.
+        df = df[df["cliente_id"].isin(delta)]
 
     df_regras = aplicar_regras(df, parametros)
 
@@ -145,12 +210,12 @@ def executar(conn: sqlite3.Connection, parametros: dict = PARAMETROS_REGRAS) -> 
 
     cur = conn.execute(
         "INSERT INTO execucoes_regras (lote_id, versao_regras, parametros_json, "
-        "executado_em, operacoes_avaliadas, clientes_fracionamento, operacoes_atipicas) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "executado_em, operacoes_avaliadas, clientes_fracionamento, operacoes_atipicas, escopo) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             _lote_mais_recente(conn), VERSAO_REGRAS,
             json.dumps(parametros, sort_keys=True), agora_utc(),
-            len(df_regras), clientes_frac, operacoes_atipicas,
+            len(df_regras), clientes_frac, operacoes_atipicas, escopo,
         ),
     )
     execucao_id = cur.lastrowid
@@ -161,6 +226,7 @@ def executar(conn: sqlite3.Connection, parametros: dict = PARAMETROS_REGRAS) -> 
 
     return ResultadoExecucao(
         execucao_id=execucao_id,
+        escopo=escopo,
         operacoes_avaliadas=len(df_regras),
         clientes_fracionamento=clientes_frac,
         operacoes_atipicas=operacoes_atipicas,
@@ -197,4 +263,6 @@ def datas_fracionamento_do_store(conn: sqlite3.Connection, cliente_id: str,
 
 if __name__ == "__main__":
     with conectar() as conn:
-        print(executar(conn), file=sys.stderr)
+        resultado = executar(conn, forcar_completa="--completa" in sys.argv)
+        print(resultado or "nada a fazer: nenhum lote novo desde a ultima execucao",
+              file=sys.stderr)

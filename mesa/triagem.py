@@ -16,6 +16,7 @@ import time
 from dataclasses import dataclass, field
 
 import mesa  # noqa: F401
+import tools
 from agente import rodar_agente
 from observabilidade import Coletor
 from verificacao_aderencia import verificar
@@ -34,7 +35,7 @@ ATOR_TRIAGEM = "sistema:triagem"
 
 @dataclass
 class ResultadoTriagem:
-    execucao_id: int
+    execucao_id: int | None  # None = triou os alertas vigentes, de qualquer execucao
     triados: int = 0
     reaproveitados: int = 0
     ja_tinham_parecer: int = 0
@@ -44,7 +45,8 @@ class ResultadoTriagem:
 
     def __str__(self) -> str:
         return (
-            f"execucao {self.execucao_id}: {self.triados} alertas triados "
+            f"{'vigentes' if self.execucao_id is None else f'execucao {self.execucao_id}'}: "
+            f"{self.triados} alertas triados "
             f"({self.reaproveitados} reaproveitados, {self.ja_tinham_parecer} ja tinham "
             f"parecer, {self.chamadas_api} chamadas de API) | "
             f"aderencia: {self.fundamentados}/{self.triados} fundamentados"
@@ -77,26 +79,43 @@ def montar_flags_do_alerta(conn: sqlite3.Connection, alerta: sqlite3.Row) -> dic
     return flags
 
 
-def fila(conn: sqlite3.Connection, execucao_id: int, estado: str = "novo",
+def fila(conn: sqlite3.Connection, execucao_id: int | None = None, estado: str = "novo",
          apenas_regra: bool = False) -> list[sqlite3.Row]:
     """A fila na ordem do ranking. `apenas_regra=True` deixa de fora os alertas
     de controle (clientes sem sinalizacao) - util para o analista, mas o worker
-    tria todos por padrao, porque sao eles que medem o falso negativo."""
+    tria todos por padrao, porque sao eles que medem o falso negativo.
+
+    `execucao_id=None` (padrao desde a Fase 5.1): os alertas VIGENTES. Um alerta
+    'novo' ja substituido por dado mais recente nao vale a chamada de API."""
+    escopo, params = ((f"{repositorio.VIGENTE}", []) if execucao_id is None
+                      else ("a.execucao_id = ?", [execucao_id]))
     sql = (
-        "SELECT * FROM alertas WHERE execucao_id = ? AND estado = ? "
-        + ("AND origem = 'regra' " if apenas_regra else "")
-        + "ORDER BY total_sinalizacoes DESC, volume_total_brl DESC, cliente_id ASC"
+        f"SELECT a.* FROM alertas a WHERE {escopo} AND a.estado = ? "
+        + ("AND a.origem = 'regra' " if apenas_regra else "")
+        + "ORDER BY a.total_sinalizacoes DESC, a.volume_total_brl DESC, a.cliente_id ASC"
     )
-    return conn.execute(sql, (execucao_id, estado)).fetchall()
+    return conn.execute(sql, [*params, estado]).fetchall()
 
 
 def triar(conn: sqlite3.Connection, execucao_id: int | None = None,
           limite: int | None = None, pausa_s: float = PAUSA_RATE_LIMIT_S,
           verbose: bool = True) -> ResultadoTriagem:
-    execucao_id = execucao_id or _execucao_mais_recente(conn)
+    _execucao_mais_recente(conn)  # falha cedo, com mensagem, se nao ha regras rodadas
+    df = repositorio.operacoes_df(conn)
+    # O agente passa a ver a MESMA base que as regras e o verificador: o store.
+    # Restaurado no fim, para o processo nao seguir respondendo sobre o store
+    # sem saber (ex.: um teste que roda a entrega depois).
+    tools.usar_base(df)
+    try:
+        return _triar(conn, execucao_id, df, limite, pausa_s, verbose)
+    finally:
+        tools.usar_base(None)
+
+
+def _triar(conn: sqlite3.Connection, execucao_id: int | None, df, limite: int | None,
+           pausa_s: float, verbose: bool) -> ResultadoTriagem:
     repo = RepositorioPareceres(conn)
     coletor = Coletor()
-    df = repositorio.operacoes_df(conn)
     from dados import aplicar_regras
 
     df_regras = aplicar_regras(df)
@@ -166,9 +185,11 @@ def triar(conn: sqlite3.Connection, execucao_id: int | None = None,
         if not resultado["cache_hit"] and pausa_s:
             time.sleep(pausa_s)
 
-    # As chamadas do Coletor sao gravadas com o parecer a que pertencem.
+    # As chamadas do Coletor sao gravadas com o parecer a que pertencem - o do
+    # alerta que ESTA triagem processou para o cliente.
+    alerta_de = {a["cliente_id"]: a["id"] for a in pendentes}
     for cliente_id, chamadas in _agrupar_por_cliente(coletor).items():
-        alerta_id = _alerta_do_cliente(conn, execucao_id, cliente_id)
+        alerta_id = alerta_de.get(cliente_id)
         parecer = repo.do_alerta(alerta_id) if alerta_id else None
         if parecer:
             repo.gravar_chamadas(parecer["parecer_id"], chamadas)
@@ -211,14 +232,6 @@ def _agrupar_por_cliente(coletor: Coletor) -> dict[str, list]:
     for chamada in coletor.chamadas:
         por_cliente.setdefault(chamada.cliente_id, []).append(chamada)
     return por_cliente
-
-
-def _alerta_do_cliente(conn: sqlite3.Connection, execucao_id: int, cliente_id: str) -> int | None:
-    linha = conn.execute(
-        "SELECT id FROM alertas WHERE execucao_id = ? AND cliente_id = ?",
-        (execucao_id, cliente_id),
-    ).fetchone()
-    return int(linha[0]) if linha else None
 
 
 if __name__ == "__main__":

@@ -87,7 +87,7 @@ def obter_do_store() -> tuple[dict, float]:
     apenas que o codigo concorda consigo mesmo. O que ele verifica e o que ficou
     GRAVADO - que e o que a Fase 1 em diante vai consumir.
     """
-    from mesa.db import CAMINHO_PADRAO, conectar
+    from mesa.db import CAMINHO_PADRAO, abrir_para_leitura
 
     if not CAMINHO_PADRAO.exists():
         raise SystemExit(
@@ -95,7 +95,11 @@ def obter_do_store() -> tuple[dict, float]:
             "  rode:  python -m mesa.ingestao && python -m mesa.regras_run"
         )
 
-    conn = conectar(CAMINHO_PADRAO)
+    # so leitura: nao migra o store (ver mesa.db.abrir_para_leitura)
+    try:
+        conn = abrir_para_leitura(CAMINHO_PADRAO)
+    except RuntimeError as erro:
+        raise SystemExit(str(erro))
 
     # Somente os lotes que de fato trouxeram operacao: reingerir o mesmo arquivo
     # cria um lote com 0 inseridas, e conta-lo inflaria os numeros brutos.
@@ -125,13 +129,21 @@ def obter_do_store() -> tuple[dict, float]:
             "  rode 'python -m mesa.regras_run' com os parametros padrao antes de verificar"
         )
 
+    # Sobre os alertas VIGENTES, nao sobre a ultima execucao: desde a Fase 5.1
+    # ela pode ser incremental e cobrir so os clientes que mudaram - os numeros
+    # sairiam do delta como se fossem da base inteira.
+    from mesa.repositorio import VIGENTE
+
     top10 = [
         r[0] for r in conn.execute(
-            "SELECT cliente_id FROM alertas WHERE execucao_id = ? AND origem = 'regra' "
-            "ORDER BY total_sinalizacoes DESC, volume_total_brl DESC, cliente_id ASC LIMIT 10",
-            (execucao["id"],),
+            f"SELECT cliente_id FROM alertas a WHERE {VIGENTE} AND origem = 'regra' "
+            "ORDER BY total_sinalizacoes DESC, volume_total_brl DESC, cliente_id ASC LIMIT 10"
         )
     ]
+    vigentes = conn.execute(
+        f"SELECT SUM(sinalizacoes_fracionamento > 0) frac, SUM(sinalizacoes_valor_atipico) atip "
+        f"FROM alertas a WHERE {VIGENTE}"
+    ).fetchone()
 
     obtido = {
         "operacoes_brutas": int(lote["ob"]),
@@ -140,8 +152,8 @@ def obter_do_store() -> tuple[dict, float]:
         "operacoes_usd": int(lote["ou"]),
         "operacoes_apos_limpeza": conn.execute(
             "SELECT COUNT(*) FROM operacoes").fetchone()[0],
-        "clientes_fracionamento": int(execucao["clientes_fracionamento"]),
-        "operacoes_atipicas": int(execucao["operacoes_atipicas"]),
+        "clientes_fracionamento": int(vigentes["frac"]),
+        "operacoes_atipicas": int(vigentes["atip"]),
         "top10": top10,
     }
     taxa = float(lote["taxa"])

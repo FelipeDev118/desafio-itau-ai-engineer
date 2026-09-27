@@ -29,11 +29,15 @@ from mesa.db import RAIZ, conectar
 OUTPUTS_DIR = RAIZ / "outputs"
 
 
-def _pareceres_do_estado_atual(conn: sqlite3.Connection, execucao_id: int) -> list[sqlite3.Row]:
-    """O parecer mais recente de cada alerta da execucao, na ordem da fila."""
+def _pareceres_do_estado_atual(conn: sqlite3.Connection, execucao_id: int | None) -> list[sqlite3.Row]:
+    """O parecer mais recente de cada alerta, na ordem da fila: dos alertas
+    VIGENTES (padrao, Fase 5.1) ou dos de uma execucao."""
+    from mesa.repositorio import VIGENTE
+
+    escopo, params = (VIGENTE, ()) if execucao_id is None else ("a.execucao_id = ?", (execucao_id,))
     return conn.execute(
-        """
-        SELECT a.id AS alerta_id, a.cliente_id, a.volume_total_brl,
+        f"""
+        SELECT a.id AS alerta_id, a.execucao_id, a.cliente_id, a.volume_total_brl,
                a.total_sinalizacoes, a.sinalizacoes_fracionamento,
                a.sinalizacoes_valor_atipico, a.nivel_risco_regra,
                p.id AS parecer_id, p.nivel_risco, p.tipologia_suspeita,
@@ -44,14 +48,14 @@ def _pareceres_do_estado_atual(conn: sqlite3.Connection, execucao_id: int) -> li
             SELECT id FROM pareceres WHERE alerta_id = a.id
             ORDER BY criado_em DESC, id DESC LIMIT 1
         )
-        WHERE a.execucao_id = ?
+        WHERE {escopo}
         ORDER BY a.total_sinalizacoes DESC, a.volume_total_brl DESC, a.cliente_id ASC
         """,
-        (execucao_id,),
+        params,
     ).fetchall()
 
 
-def _flags(conn: sqlite3.Connection, linha: sqlite3.Row, execucao_id: int) -> dict:
+def _flags(conn: sqlite3.Connection, linha: sqlite3.Row) -> dict:
     from mesa import regras_run
 
     flags = {
@@ -60,16 +64,13 @@ def _flags(conn: sqlite3.Connection, linha: sqlite3.Row, execucao_id: int) -> di
     }
     if flags["flag_fracionamento"]:
         flags["datas_fracionamento"] = regras_run.datas_fracionamento_do_store(
-            conn, linha["cliente_id"], execucao_id
+            conn, linha["cliente_id"], linha["execucao_id"]  # a do proprio alerta
         )
     return flags
 
 
 def exportar(conn: sqlite3.Connection, execucao_id: int | None = None,
              destino: Path = OUTPUTS_DIR) -> dict:
-    from mesa.triagem import _execucao_mais_recente
-
-    execucao_id = execucao_id or _execucao_mais_recente(conn)
     destino.mkdir(parents=True, exist_ok=True)
     linhas = _pareceres_do_estado_atual(conn, execucao_id)
 
@@ -100,7 +101,7 @@ def exportar(conn: sqlite3.Connection, execucao_id: int | None = None,
             # chamada de API: e o mesmo significado do antigo cache_hit
             "cache_hit": linha["reaproveitado_de"] is not None,
             "hash_entrada": linha["hash_entrada"],
-            "flags_deterministicas": _flags(conn, linha, execucao_id),
+            "flags_deterministicas": _flags(conn, linha),
             "volume_total_brl": linha["volume_total_brl"],
             "total_sinalizacoes_deterministicas": linha["total_sinalizacoes"],
             "aderencia": {
@@ -204,7 +205,8 @@ if __name__ == "__main__":
     destino = Path(sys.argv[1]) if len(sys.argv) > 1 else OUTPUTS_DIR
     with conectar() as conn:
         r = exportar(conn, destino=destino)
-    print(f"execucao {r['execucao_id']}: {r['clientes']} clientes | "
+    escopo = "alertas vigentes" if r["execucao_id"] is None else f"execucao {r['execucao_id']}"
+    print(f"{escopo}: {r['clientes']} clientes | "
           f"{r['com_parecer']} com parecer | {r['fundamentados']} fundamentados | "
           f"{r['chamadas_api']} chamadas de API registradas")
     print(f"exportado para {destino}")

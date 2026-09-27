@@ -7,3 +7,8 @@ __pycache__/
 outputs/mesa.db
 outputs/mesa.db-wal
 outputs/mesa.db-shm
+# Fase 5: arquivos de operacao que chegam para o ciclo - dado de cliente, nunca
+# versionado - e a trava e o log do ciclo
+dados/entrada/
+outputs/mesa.db.ciclo.lock
+outputs/ciclo.log
