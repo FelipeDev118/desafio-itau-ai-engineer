@@ -556,8 +556,14 @@
  "ja esta em analise". Acentuar e mudanca de contrato (ha testes com a string
  exata) - fazer de uma vez, junto com a Fase 4.
 -------------------------------------------------------------------------------
- FASE 4 - DECISAO DO ANALISTA E FEEDBACK                   [nao detalhada ainda]
+ FASE 4 - DECISAO DO ANALISTA E FEEDBACK                   [concluida]
 -------------------------------------------------------------------------------
+ OBJETIVO: fechar o ciclo. Ate aqui o sistema so TRIAVA; a partir desta fase o
+ analista DECIDE, e a decisao vira registro tao auditavel quanto o parecer. E
+ so com decisao gravada que da para medir o que interessa: o agente acerta o
+ que o HUMANO decidiria? (regra-vs-agente, a metrica da entrega, compara duas
+ maquinas.)
+
  OBSERVADO NA FASE 2 (entra no desenho da 4):
    - hoje so o analista ATUAL fica gravado (alertas.analista_id). Quem pegou o
      caso antes, e quando, se perde ao devolver para a fila. Para compliance,
@@ -565,9 +571,145 @@
      append-only como os pareceres - tabela `transicoes`, junto com `decisoes`
    - a transicao em_analise->concluido foi deixada FECHADA de proposito (2.4).
      A 4.1 a abre, e so junto com a decisao gravada na mesma transacao
- [ ] 4.1  Tabela decisoes + registro (concordo / discordo+motivo / escalar)
- [ ] 4.2  Metrica agente-vs-humano (substitui regra-vs-agente como metrica-mor)
- [ ] 4.3  Tempo de analise economizado por caso
+
+ DECISOES DE DESENHO (tomadas ao detalhar, 2026-09-27):
+   - `concluido` e TERMINAL nesta fase. Reabrir caso decidido e papel de
+     supervisor, que depende de autenticacao de verdade (X-Analista e so
+     identificacao). Por isso UNIQUE(alerta_id) em decisoes: o banco, e nao so
+     o compare-and-set, garante uma decisao por caso.
+   - `escalar` CONCLUI o caso na mesa (estado concluido, decisao 'escalar').
+     O fluxo do segundo nivel (comite / comunicacao ao COAF) esta fora do
+     escopo; o caso escalado e identificavel pela decisao, nao por um estado
+     novo (que exigiria reconstruir a tabela alertas - CHECK nao se altera
+     no SQLite).
+   - a decisao grava o parecer_id que o analista VIU. O corpo do POST traz o
+     parecer que a tela mostrou; se o parecer atual do alerta for outro, 409.
+     Decidir sobre um parecer que nao foi o lido e o erro que isto impede.
+   - esquema v5 -> v6 e ADITIVO (so tabelas novas). A partir desta fase o
+     store guarda decisao humana, que nao se reprocessa: "apagar e
+     reconstruir" deixa de ser aceitavel (mesa/db.py ja avisava). Migracao
+     explicita e so para versoes cujo salto e aditivo; as demais sao recusadas.
+
+ [x] 4.0  Esquema v6: transicoes + decisoes, append-only, e migracao v5->v6
+          - `transicoes`: alerta_id, estado_anterior, estado_novo, ator,
+            ator_tipo ('analista'|'sistema'), registrado_em. Triggers sem
+            UPDATE/DELETE, como pareceres
+          - `decisoes`: alerta_id UNIQUE, parecer_id (NULL se decidido sem
+            parecer), analista_id, decisao CHECK (concordo|discordo|escalar),
+            nivel_risco_analista CHECK (baixo|medio|alto, NULL so em escalar),
+            nivel_risco_agente (copiado do parecer visto, para a metrica nao
+            depender de um join que muda se o parecer mudar), motivo,
+            decidido_em. Triggers sem UPDATE/DELETE
+          - migracao: `python -m mesa.db` leva um store v5 a v6 sem perder nada.
+            Store v1-v4 e recusado com mensagem (hoje aplicar_esquema() so
+            carimba a versao nova num banco velho - colunas novas NAO
+            aparecem com CREATE TABLE IF NOT EXISTS. Brecha latente, fechar)
+          - a API continua recusando (503) esquema diferente, agora apontando
+            o comando de migracao
+          ACEITE: copia do store real (v5, com o caso que o Felipe pegou pela
+                  tela) migra para v6 com as mesmas contagens e o mesmo dono;
+                  store v4 e recusado; UPDATE/DELETE nas duas tabelas abortam.
+
+          FEITO 2026-09-27: copia do store real migrou v5->v6 com as mesmas
+          contagens (317 op, 30 alertas, 80 pareceres) e o CLI-014 ainda com
+          Felipe; rodar de novo nao faz nada. v4 recusado SEM carimbar a versao.
+          O teste do salto aditivo monta o DDL v5 como "o atual sem a secao da
+          Fase 4" e exige que a secao nova so tenha CREATE ... IF NOT EXISTS.
+          >>> BUG PEGO PELO TESTE, NO PROPRIO SCHEMA <<<
+          Um CHECK cuja expressao da NULL PASSA. `length(trim(NULL)) > 0` e
+          NULL: "escalar sem motivo", "discordo com motivo NULL" e "concordo
+          sem nivel" entravam. Corrigido com COALESCE e `IS`; os tres casos
+          viraram parametros do teste.
+          O store real (outputs/mesa.db) NAO foi migrado - o servidor do
+          Felipe estava rodando o codigo v5 sobre ele. Backup no scratchpad.
+ [x] 4.1  Decisao registrada junto com a conclusao do caso
+          - POST /alertas/{id}/decisao, X-Analista obrigatorio, corpo
+            {decisao, nivel_risco?, motivo?, parecer_id}
+          - regras: so o DONO de um caso em_analise decide (409 caso contrario)
+              concordo : exige parecer com nivel valido; o nivel gravado e o
+                         do parecer (o cliente nao manda outro)
+              discordo : exige nivel_risco e motivo
+              escalar  : exige motivo; nivel_risco opcional
+            corpo invalido para a decisao escolhida = 422 com o porque
+          - UMA transacao: compare-and-set em alertas (em_analise + dono ->
+            concluido) + INSERT decisoes + INSERT transicoes. Falhou qualquer
+            parte, nada fica gravado
+          - toda mudanca de estado grava transicao: pegar/devolver (API),
+            triar (worker, ator 'sistema:triagem'), concluir (decisao)
+          - POST /estado continua recusando `concluido`, agora apontando a rota
+            de decisao
+          - GET /alertas/{id} passa a trazer `decisao` e `trilha`; a fila traz
+            a decisao de cada caso
+          - mensagens de erro da API acentuadas (POLIMENTO ANOTADO na Fase 3)
+          - tela: formulario de decisao so para o dono; caso concluido mostra a
+            decisao e a trilha
+          ACEITE: pegar CLI-028, discordar com motivo pela tela -> caso
+                  concluido, decisao e trilha visiveis apos recarregar;
+                  concordo sem parecer = 422; outro analista decidindo = 409;
+                  falha forcada no INSERT da decisao deixa o caso em_analise.
+
+          FEITO 2026-09-27: no navegador (servidor de teste, copia migrada),
+          CLI-028 pego por ana.teste, "discordo" + alto + motivo, dois cliques
+          (armar/confirmar) -> concluido; apos recarregar: decisao (parecer nº
+          53 lido, agente medio), trilha com 2 passos, chip na fila. Nome
+          diferente do dono = sem formulario; nivel vazio = envio barrado.
+          API: 21 testes novos (cada regra, atomicidade com falha forcada na
+          trilha, corrida de duas abas, parecer diferente do lido = 409).
+          >>> CORRIDA REAL NO WORKER, achada ao ler o codigo para a trilha <<<
+          triagem._concluir fazia UPDATE sem condicao: analista pega um caso
+          'novo' enquanto o agente roda -> o worker o jogava para 'triado'
+          com o analista ainda dono. Agora so sai de 'novo' (CAS), e grava a
+          transicao 'sistema:triagem' na mesma transacao.
+          Mensagens da API acentuadas (POLIMENTO da Fase 3), testes ajustados.
+          Nota: um teste usou monkeypatch.undo(), que desfez tambem o
+          redirecionamento do banco e fez um GET cair no store real (leitura,
+          503, nada escrito - conferido). Trocado por restauracao pontual.
+          Validacao no navegador: screenshots vinham CONGELADOS (painel
+          oculto) e uma navegacao so de hash nao recarregou o app.js novo -
+          a mesma armadilha do "codigo velho" da Fase 3. Tudo conferido pelo
+          DOM, com reload forcado.
+ [x] 4.2  Metrica agente-vs-humano (substitui regra-vs-agente como metrica-mor)
+          - GET /metricas?execucao_id: decididos, por decisao, concordancia de
+            nivel agente x analista (com a matriz 3x3), e o CRUZAMENTO com a
+            aderencia: dos pareceres que o verificador marcou como nao
+            fundamentados, quantos o analista rejeitou? (valida o verificador)
+          - regra x analista ao lado, para comparacao com a metrica antiga
+          - denominador zero devolve null, nunca 0% (a mesma distincao de
+            "nao triado" x "diverge")
+          - tela: painel de metricas
+          ACEITE: store com decisoes fabricadas no teste -> numeros exatos
+                  conferidos a mao; store real sem decisao -> null, nao 0%.
+
+          FEITO 2026-09-27: mesa/metricas.py + GET /metricas + painel
+          (#/metricas). 5 decisoes sobre casos reais com os numeros escritos
+          no teste ANTES de rodar: agente x analista 2/4, aceitacao 2/5, regra
+          x analista 3/4, regra x agente 2/5, nao fundamentados 100% rejeitados.
+          Copia do store real sem decisao: tudo null. No navegador, 3 decisoes
+          conferidas a mao contra o painel. Escalar sem nivel fica FORA da
+          comparacao (mutacao que o contava como divergencia: pega).
+ [x] 4.3  Tempo de analise por caso (e o que da para dizer sobre economia)
+          - tempo MEDIDO pela trilha: soma dos intervalos em em_analise ate a
+            decisao (um caso devolvido e repego conta os dois periodos)
+          - "economizado" exige uma linha de base (tempo SEM a ferramenta) que
+            o store nao tem e nao pode inventar. A API so calcula economia se
+            a linha de base for INFORMADA na requisicao, e devolve junto a
+            procedencia ("informada, nao medida"). Sem ela, economia = null
+          ACEITE: trilha fabricada com tempos conhecidos -> soma exata,
+                  incluindo o caso devolvido e repego; sem linha de base,
+                  economia null.
+
+          FEITO 2026-09-27: trilha fabricada -> 900 s (10+5 min, devolvido e
+          repego) e 1200 s; mediana 1050; com 30 min informados, economia 750
+          s e a procedencia "informada, nao medida". Caso de trilha incompleta
+          e declarado (casos_sem_trilha_completa), nao descartado em silencio
+          - no navegador, o CLI-014 real (pego antes da v6) apareceu assim.
+          >>> MUTACAO SOBREVIVENTE <<< medir "pela metade" uma trilha que
+          comeca no meio passava: o unico teste era a trilha de um passo, em
+          que as duas versoes dao None por acaso. Teste novo (saida sem
+          entrada, depois repego) distingue as duas.
+
+ ===> FASE 4 CONCLUIDA em 2026-09-27. Suite: 234 testes pytest (inclui os
+      17 do Node). <===
 
 -------------------------------------------------------------------------------
  FASE 5 - INGESTAO INCREMENTAL                             [nao detalhada ainda]
@@ -594,6 +736,14 @@
 ===============================================================================
  REGISTRO DE EXECUCAO (o que foi feito, quando, e o que a evidencia mostrou)
 ===============================================================================
+ 2026-09-27  FASE 4 CONCLUIDA (4.0 a 4.3). 234 testes (+49). O analista decide
+             e a decisao e registro append-only, junto da trilha de toda
+             transicao. Esquema v6, primeiro salto MIGRADO (nao reconstruido).
+             Tres achados: CHECK com NULL passando no schema (pego pelo teste),
+             corrida do worker com o analista (pega lendo o codigo), mutacao
+             sobrevivente no tempo de analise (teste insuficiente, corrigido).
+             Store real ainda em v5: migrar com `python -m mesa.db` (a API nova
+             recusa v5 com 503 apontando esse comando).
  2026-09-12  Roadmap criado. Fase 0 iniciada.
  2026-09-12  0.1 concluido. Efeito colateral: conftest.py nao punha a RAIZ no
              sys.path - `from mesa import ...` so funcionava via `python -m
