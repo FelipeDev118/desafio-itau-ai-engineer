@@ -712,11 +712,138 @@
       17 do Node). <===
 
 -------------------------------------------------------------------------------
- FASE 5 - INGESTAO INCREMENTAL                             [nao detalhada ainda]
+ FASE 5 - INGESTAO INCREMENTAL                             [concluida]
 -------------------------------------------------------------------------------
- [ ] 5.1  Base nova chega -> so o delta e reprocessado
- [ ] 5.2  Versionamento de operacao corrigida (hoje reingestao NAO atualiza)
- [ ] 5.3  Agendamento da execucao de regras
+ OBJETIVO: base nova chega -> so o que mudou e reprocessado, sem apagar o
+ trabalho do analista, sem reescrever fato em silencio, e rodando sozinho.
+
+ >>> ACHADO AO DETALHAR (bloqueante) <<<
+ As ferramentas do agente (nivel_2/tools.py) leem o JSON da ENTREGA, nao o
+ store. Hoje os dois coincidem, entao nada aparece. Na primeira base nova
+ ingerida, o worker triaria com dado velho - e como o hash do parecer e
+ calculado sobre historico_cliente() lido do JSON, ele NAO mudaria: parecer
+ antigo reaproveitado em silencio para cliente com operacao nova, zero chamada
+ de API, nenhum aviso. O 5.0 resolve isso antes de qualquer outra coisa.
+ Tambem assumem "a ultima execucao = retrato completo": a fila, o confronto
+ --store, o verificar_ambiente --store e o exportar. Uma execucao incremental
+ quebra essa premissa. E o caso (GET /alertas/{id}) le as operacoes ATUAIS:
+ depois de uma base nova, um caso decidido ontem mostraria operacao que o
+ analista nunca viu.
+
+ DECISOES DE DESENHO (2026-09-27):
+   - arquivo novo e INCREMENTAL: operacao ausente no arquivo NAO e exclusao.
+     Nenhuma operacao se apaga (DELETE em operacoes vira trigger que aborta)
+   - correcao = mesmo id com algum campo BRUTO diferente (cliente, data,
+     valor, moeda, canal, tipo, contraparte, observacao). valor_brl NAO entra
+     na comparacao: o mesmo arquivo com outra taxa de cambio nao e correcao
+     (a taxa e propriedade do lote - Fase 0)
+   - a versao anterior vai para `operacoes_historico` por TRIGGER no UPDATE:
+     corrigir sem guardar a anterior fica impossivel, nao so proibido
+   - delta = clientes com operacao nova ou corrigida desde o lote da ultima
+     execucao. So vale porque as regras sao POR CLIENTE; um teste prende isso
+     (regras sobre o recorte do delta == regras sobre a base inteira,
+     restritas ao delta). Uma regra entre clientes quebra o teste - e ai o
+     delta tem que alargar, nao o teste afrouxar
+   - execucao incremental cria alerta so para o delta; cada alerta novo
+     `substitui` o vigente do cliente. A fila padrao passa a ser "alertas
+     vigentes" (nao substituidos), nao "a ultima execucao"
+   - alerta substituido: a decisao fica nele (historico). Em analise e
+     substituido -> nao pode ser decidido nem pego (409 apontando o atual);
+     pode ser devolvido. O caso novo mostra a decisao anterior do cliente
+   - execucao COMPLETA quando e a primeira, ou quando versao/parametros das
+     regras mudaram (todo resultado pode mudar); senao, incremental
+   - o caso mostra a base COMO ERA no lote da sua execucao (a versao da
+     operacao vigente naquele lote), nao a atual
+   - v7 precisa de coluna nova em tabela existente (alertas.substitui_alerta_id,
+     execucoes_regras.escopo): primeira migracao que nao e so CREATE.
+     MIGRACOES por versao (ALTER TABLE ADD COLUMN) + teste de que banco
+     migrado == banco novo, a partir de snapshots CONGELADOS do DDL v5 e v6
+
+ [x] 5.0  Pre-requisitos: o agente le do store; migracao por versao (v7)
+          - tools.py ganha fonte injetavel; o worker injeta o DataFrame do
+            store. nivel_2 continua sem importar mesa; a entrega (agente.py,
+            lote.py, MCP) continua lendo o JSON
+          - mesa/db.py: MIGRACOES {versao: [sql]}, aplicadas em ordem, na mesma
+            transacao; DDL v5 e v6 congelados em tests/esquemas/
+          ACEITE: store com operacao que o JSON nao tem -> o worker ve a
+                  operacao e o hash muda; a entrega segue no JSON. Banco v5 e v6
+                  migrados para v7 tem a MESMA estrutura de um v7 novo; copia
+                  do store real (v6, com decisao) migra sem perder nada.
+
+          FEITO 2026-09-27: com o codigo antigo, o teste do agente falha - o
+          reaproveitamento silencioso existia. Agora o CLI-014 com uma operacao
+          a mais no store paga 1 chamada, os outros 29 seguem reaproveitados, e
+          a entrega volta a ler o JSON depois. Migracao: v5 e v6 (DDL congelado
+          do git) migrados == v7 novo em colunas, FKs, indices e triggers;
+          migracao e UMA transacao (falha no 2o ALTER nao deixa o 1o); v6 com 3
+          decisoes e 6 transicoes migrou intacto.
+          >>> EFEITO COLATERAL REAL <<< rodar `verificar_ambiente.py --store`
+          MIGROU o store real de v6 para v7 (conectar() aplica o esquema) - e o
+          servidor do Felipe, ainda na Fase 4, passou a dar 503. Dado intacto.
+          Comandos que so leem agora usam db.abrir_para_leitura(): conferem a
+          versao e recusam, sem migrar (teste de regressao provado por mutacao).
+ [x] 5.2  Versionamento de operacao corrigida
+          - ingestao detecta correcao, faz UPDATE (o trigger guarda a anterior)
+          - GET /alertas/{id} mostra as operacoes como eram no lote da execucao
+          ACEITE: reingerir com 1 operacao corrigida -> 1 versao no historico,
+                  valor novo em operacoes, lote registra 1 correcao; mesmo
+                  arquivo com taxa diferente -> 0 correcoes; caso antigo mostra
+                  o valor antigo, caso novo o novo; DELETE em operacoes aborta.
+
+          FEITO 2026-09-27: OP-00269 corrigida para 7000: o caso antigo do
+          CLI-028 segue com 6.913,84 e sem a operacao que chegou depois; o caso
+          novo mostra 7000 e a nova. USD reenviado com taxa 6.0: 0 correcoes,
+          valor_brl congelado em 540. Correcao que troca o cliente afeta os
+          dois. O teste antigo que FIXAVA a divida ("corrigido nao atualiza")
+          foi substituido - era a especificacao do comportamento velho.
+          Tropecos: ORDER BY com expressao nao vale em UNION (subconsulta); um
+          teste de trigger de DELETE passava vazio - trigger de linha nao
+          dispara em tabela vazia.
+ [x] 5.1  Delta: execucao incremental, vigencia e substituicao
+          - regras_run: completa x incremental decidido pelo store; sem delta,
+            nenhuma execucao ("nada a fazer")
+          - fila, worker, confronto, verificar_ambiente, exportar e metricas
+            passam a ler alertas vigentes
+          - API: substituido nao se pega nem se decide; caso novo traz a
+            decisao anterior; tela mostra os dois lados
+          ACEITE: base nova com operacoes para 2 clientes (1 ja decidido, 1 em
+                  analise) -> execucao com 2 alertas; os outros 28 intactos
+                  (estado, dono, decisao); o worker chama o LLM so para os 2;
+                  rodar de novo = nada a fazer; o verificar_ambiente --store
+                  continua reproduzindo os 8 numeros sobre a base original.
+
+          FEITO 2026-09-27: aceite inteiro num teste so, pela API: CLI-028
+          decidido e CLI-014 em analise recebem operacao nova -> execucao
+          incremental com 2 alertas; os outros 28 identicos (alerta, estado,
+          dono); CLI-014 antigo so devolve (pegar/decidir = 409); CLI-028 novo
+          traz a decisao anterior; worker: 2 triados, 2 chamadas; regras de
+          novo = None; metricas contam a decisao do alerta substituido.
+          Garantia do delta: regras sobre o recorte de cada um dos 30 clientes
+          == regras sobre a base inteira. Mutacoes pegas: delta sem o historico
+          (correcao que move operacao), parametros ignorados, fila e
+          verificar_ambiente lendo "a ultima execucao".
+          Navegador (store de teste, sem chamar LLM): aviso no alerta
+          substituido, so "Devolver", sem formulario; caso novo com a decisao
+          anterior e 13 operacoes; alerta antigo continua com 12.
+ [x] 5.3  Ciclo agendavel
+          - python -m mesa.ciclo --entrada <pasta>: ingere arquivos ainda nao
+            ingeridos (por sha256), roda as regras (incremental) e a triagem
+          - trava contra dois ciclos ao mesmo tempo; --a-cada <min> para rodar
+            em laco; servico no docker-compose; linha de cron documentada
+          ACEITE: dois ciclos seguidos sem arquivo novo = 0 lote, 0 execucao,
+                  0 chamada de API; arquivo novo na pasta e processado uma vez;
+                  segundo ciclo simultaneo sai sem fazer nada.
+
+          FEITO 2026-09-27: mesa/ciclo.py. Base ja ingerida com outro nome =
+          reconhecida pelo sha256; passadas seguidas nao mudam nenhuma contagem
+          e nao chamam API. Arquivo novo: 1 lote, 1 execucao incremental, 1
+          chamada. Trava flock (liberada pelo SO se o processo morre). Ciclo
+          que cai entre regras e triagem e retomado pelo seguinte. NAO exporta
+          outputs/ (arquivos da entrega, commitados). Servico mesa-ciclo no
+          compose; linha de cron no comentario; dados/entrada/ no .gitignore.
+
+ ===> FASE 5 CONCLUIDA em 2026-09-27. Suite: 261 testes pytest (inclui os
+      17 do Node). <===
 
 ===============================================================================
  DIVIDA TECNICA E RISCOS CONHECIDOS (nao virar surpresa depois)
@@ -724,8 +851,17 @@
  [ ] LGPD: pipeline envia dado de cliente para API de terceiro. Bloqueia piloto
      com dado real. Mitigacao: interface ProvedorLLM para trocar por modelo no
      perimetro do banco. (docs/DECISOES.md, secao 2)
- [ ] Reingestao de arquivo CORRIGIDO nao atualiza operacao existente - e
-     deliberado nesta fase (fato ingerido nao muda em silencio), vira Fase 5.2.
+ [x] Reingestao de arquivo CORRIGIDO nao atualiza operacao existente.
+     RESOLVIDO na Fase 5.2: correcao vira versao nova, anterior no historico.
+ [ ] mesa/ciclo.py usa fcntl (trava de arquivo): roda em Linux/macOS/Docker,
+     nao em Windows nativo. Suficiente para o alvo (servidor/container).
+ [ ] Execucao incremental: se uma correcao tira a UNICA operacao de um cliente
+     (move para outro), esse cliente some da base e nao ganha alerta novo - o
+     vigente dele fica com a base antiga. Raro; tratar quando existir cliente
+     "encerrado" como conceito.
+ [ ] `python -m mesa.ingestao` reenviando o mesmo arquivo cria um lote com 0
+     inseridas (registro de recebimento). O ciclo evita pelo sha256; a CLI
+     avulsa nao. Inofensivo nos numeros (verificar_ambiente ignora lote vazio).
  [ ] Arredondamento SQLite x pandas: se 0.4 falhar por ultimo bit, usar
      pytest.approx(rel=1e-9) e REGISTRAR a decisao, nao afrouxar em silencio.
  [ ] data como TEXT 'YYYY-MM-DD' (SQLite nao tem tipo data). Ordena correto
@@ -736,6 +872,46 @@
 ===============================================================================
  REGISTRO DE EXECUCAO (o que foi feito, quando, e o que a evidencia mostrou)
 ===============================================================================
+ 2026-09-27  AUDITORIA DO SISTEMA INTEIRO (pedido do Felipe, apos a Fase 5).
+             264 testes, 0 avisos. Pipeline montado do ZERO num banco
+             temporario: 8 numeros + top10 OK, 30 triados com 0 chamada de API,
+             28/30 fundamentados, pareceres_lote.json / metricas_lote.csv /
+             aderencia_pareceres.csv regenerados BYTE A BYTE iguais aos
+             commitados, confronto 23/30 com confronto_resumo.json identico.
+             Entrega original (verificar, dados.py, import do MCP) intacta.
+             Nenhum segredo, .env ou banco versionado (arquivos e historico).
+             ACHADOS E CORRECOES:
+             (1) conectar(caminho=CAMINHO_PADRAO) fixava o padrao na IMPORTACAO:
+                 o proprio script da auditoria, "apontando para um banco
+                 temporario", escreveu 1 lote vazio no store real. Estrago
+                 conferido (so a linha do lote, nada ligado a ela), backup, linha
+                 removida. Padrao agora lido na chamada; e um fixture autouse
+                 impede qualquer teste de tocar outputs/mesa.db (conferido pelo
+                 mtime do arquivo antes/depois da suite).
+             (2) .dockerignore nao excluia outputs/mesa.db nem dados/entrada/:
+                 store e arquivos de cliente iriam para as camadas da imagem.
+             (3) Jupyter sem token publicado em todas as interfaces (8888):
+                 qualquer maquina da rede executaria codigo. Agora 127.0.0.1.
+             (4) pd.to_datetime sem formato: "05/03/2026" virava 3 de MAIO num
+                 arquivo so com datas BR (medido) - e o resultado dependia da
+                 primeira data do arquivo. Formato ISO fixo: fora dele, invalida.
+                 Era o unico aviso da suite desde a entrega.
+             (5) API sem limite de tamanho em motivo/X-Analista, num registro
+                 append-only (a tela limitava, a API nao).
+             (6) README nao mencionava a Mesa (5 fases sem instrucao de uso).
+             (7) exportar imprimia "execucao None" depois da vigencia.
+ 2026-09-27  FASE 5 CONCLUIDA (5.0 a 5.3). 261 testes (+23). Base nova entra,
+             so o delta e reavaliado e triado, correcao vira versao, o ciclo
+             roda sozinho. Esquema v7 - primeira migracao com ALTER.
+             Achados: (1) o agente lia o JSON, nao o store - base nova seria
+             triada com dado velho e parecer antigo reaproveitado em silencio;
+             (2) comando de verificacao migrava o store (derrubou o servidor do
+             Felipe com 503, dado intacto); (3) consumidores de "ultima
+             execucao" dariam numeros do delta como se fossem da base.
+             TAMBEM (Fase 4, relatado pelo Felipe): botao Metricas "morto" - o
+             navegador usava o app.js antigo do cache sem perguntar ao
+             servidor (log: so o index.html foi pedido). Arquivos da tela saem
+             agora com Cache-Control: no-cache; botao redesenhado com estado ativo.
  2026-09-27  FASE 4 CONCLUIDA (4.0 a 4.3). 234 testes (+49). O analista decide
              e a decisao e registro append-only, junto da trilha de toda
              transicao. Esquema v6, primeiro salto MIGRADO (nao reconstruido).
