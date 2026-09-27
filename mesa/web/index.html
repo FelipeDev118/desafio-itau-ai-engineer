@@ -6,8 +6,14 @@
   <title>Mesa de Triagem PLD</title>
   <!-- Nenhum recurso externo (fonte, CDN, script): a ferramenta tem que abrir
        numa rede de banco sem acesso a internet. -->
-  <link rel="stylesheet" href="estilo.css">
-  <script type="module" src="app.js"></script>
+  <!-- {{versao}} e trocado pela API (mesa/api.py) por um hash do conteudo de
+       app.js + logica.js + estilo.css. Endereco novo = arquivo novo para o
+       navegador: sem isso ele reusava o JS antigo do cache mesmo depois de o
+       codigo mudar (o botao Metricas ficou "morto" por isso). O import map faz
+       o mesmo para o import de logica.js que esta DENTRO do app.js. -->
+  <script type="importmap">{"imports": {"./logica.js": "./logica.js?v={{versao}}"}}</script>
+  <link rel="stylesheet" href="estilo.css?v={{versao}}">
+  <script type="module" src="app.js?v={{versao}}"></script>
 </head>
 <body>
   <header class="topo">

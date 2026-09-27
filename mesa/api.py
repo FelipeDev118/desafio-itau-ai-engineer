@@ -15,6 +15,7 @@ Rodar:
 """
 import base64
 import binascii
+import hashlib
 import json
 import sqlite3
 from pathlib import Path
@@ -22,7 +23,8 @@ from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi import Request, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -1016,6 +1018,37 @@ def ver_metricas(
 @app.get("/", include_in_schema=False)
 def raiz():
     return RedirectResponse("/app/")
+
+
+ARQUIVOS_VERSIONADOS = ("app.js", "logica.js", "estilo.css")
+
+
+def _versao_da_tela() -> str:
+    """Hash do conteudo dos arquivos da tela. Calculado a cada pedido do
+    index.html (sao ~40 KB): com --reload, ou depois de atualizar o codigo, a
+    versao ja muda sem reiniciar nada."""
+    h = hashlib.sha256()
+    for nome in ARQUIVOS_VERSIONADOS:
+        h.update((WEB_DIR / nome).read_bytes())
+    return h.hexdigest()[:12]
+
+
+@app.get("/app/", include_in_schema=False)
+def tela(request: Request):
+    """O index.html com os enderecos versionados (ver o comentario nele).
+
+    O no-cache sozinho nao bastou: copias guardadas ANTES de o cabecalho existir
+    continuavam sendo reusadas sem o navegador perguntar nada - o log do
+    servidor mostrava so o GET do index, nunca o do app.js, mesmo apos recarga.
+    Com o endereco mudando junto com o conteudo, o navegador nao tem copia para
+    reusar."""
+    versao = _versao_da_tela()
+    etag = f'"{versao}-{hashlib.sha256((WEB_DIR / "index.html").read_bytes()).hexdigest()[:12]}"'
+    cabecalhos = {"Cache-Control": "no-cache", "ETag": etag}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=cabecalhos)
+    html = (WEB_DIR / "index.html").read_text(encoding="utf-8").replace("{{versao}}", versao)
+    return HTMLResponse(html, headers=cabecalhos)
 
 
 class _TelaSemCacheVelho(StaticFiles):

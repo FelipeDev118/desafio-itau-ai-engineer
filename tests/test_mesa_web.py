@@ -128,3 +128,29 @@ def test_logica_da_tela_no_node():
     )
     assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-2000:]
     assert re.search(r"# fail 0", r.stdout), r.stdout[-1500:]
+
+
+def test_enderecos_dos_arquivos_mudam_quando_o_conteudo_muda(cliente, tmp_path, monkeypatch):
+    """O no-cache nao bastou na pratica: o navegador reusou copias guardadas
+    ANTES do cabecalho existir, sem perguntar (o log so tinha o GET do index).
+    O index passa a apontar para app.js?v=<hash do conteudo> - endereco novo,
+    arquivo novo. Inclusive para o logica.js importado de DENTRO do app.js
+    (import map): versionar so o app.js deixaria a tela nova com a logica velha."""
+    import re
+    import shutil
+
+    from mesa import api
+
+    html = cliente.get("/app/").text
+    assert "{{versao}}" not in html
+    versao = re.search(r'app\.js\?v=([0-9a-f]{12})', html).group(1)
+    assert f'estilo.css?v={versao}' in html
+    assert f'"./logica.js": "./logica.js?v={versao}"' in html
+
+    copia = tmp_path / "web"
+    shutil.copytree(api.WEB_DIR, copia)
+    monkeypatch.setattr(api, "WEB_DIR", copia)
+    assert re.search(r'app\.js\?v=([0-9a-f]{12})', cliente.get("/app/").text).group(1) == versao
+    (copia / "logica.js").write_text((copia / "logica.js").read_text() + "\n// mudou\n")
+    nova = re.search(r'app\.js\?v=([0-9a-f]{12})', cliente.get("/app/").text).group(1)
+    assert nova != versao
