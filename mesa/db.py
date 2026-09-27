@@ -21,11 +21,18 @@ ESQUEMA_SQL = Path(__file__).resolve().parent / "esquema.sql"
 # um banco velho antes de escrever nele, em vez de descobrir na primeira query
 # que uma coluna nao existe. Bump manual a cada alteracao de esquema.
 #
-# NAO ha migracao automatica ainda (esta na Fase 5). Enquanto o store so contem
-# dado sintetico reprocessavel, alterar o esquema significa apagar o banco e
-# reingerir - barato e honesto. No dia em que houver decisao de analista gravada
-# aqui, isso deixa de ser aceitavel e a migracao vira pre-requisito.
-VERSAO_ESQUEMA = 5
+# Ate a v5, alterar o esquema significava apagar o banco e reingerir: o store so
+# continha dado sintetico reprocessavel. A v6 (Fase 4) grava DECISAO DE ANALISTA,
+# que nao se reprocessa - dai em diante o banco e migrado, nao reconstruido.
+VERSAO_ESQUEMA = 6
+
+# Versoes a partir das quais aplicar o DDL atual basta para chegar a
+# VERSAO_ESQUEMA: o salto so ADICIONA tabelas/indices/triggers (tudo IF NOT
+# EXISTS). Uma versao fora daqui mudou coluna de tabela existente - e
+# `CREATE TABLE IF NOT EXISTS` nao altera tabela que ja existe. Carimbar a versao
+# nova num banco desses faria o codigo acreditar em colunas que nao estao la.
+#   5 -> 6: + transicoes, + decisoes (Fase 4)
+MIGRAVEIS_POR_ADICAO = {5}
 
 
 def agora_utc() -> str:
@@ -75,8 +82,12 @@ def conectar(caminho: Path | str = CAMINHO_PADRAO, criar_esquema: bool = True,
 
 
 def aplicar_esquema(conn: sqlite3.Connection) -> None:
-    """Idempotente: todo o DDL usa IF NOT EXISTS, entao rodar em banco ja criado
-    nao faz nada. E o que permite chamar `conectar()` sem saber se o banco existe."""
+    """Cria o esquema num banco novo, migra um banco de versao aditiva, e nao faz
+    nada num banco ja atualizado (todo o DDL usa IF NOT EXISTS). E o que permite
+    chamar `conectar()` sem saber se o banco existe.
+
+    Recusa o resto: banco mais novo que o codigo, e banco antigo cujo salto nao e
+    aditivo (ver MIGRAVEIS_POR_ADICAO)."""
     versao_atual = conn.execute("PRAGMA user_version").fetchone()[0]
     if versao_atual > VERSAO_ESQUEMA:
         raise RuntimeError(
@@ -84,6 +95,35 @@ def aplicar_esquema(conn: sqlite3.Connection) -> None:
             "- este codigo e mais antigo que o banco; atualize o codigo em vez de "
             "escrever num esquema que ele nao entende"
         )
+    # 0 = banco recem-criado (ou vazio): o DDL inteiro cria tudo do zero
+    if versao_atual not in (0, VERSAO_ESQUEMA) and versao_atual not in MIGRAVEIS_POR_ADICAO:
+        raise RuntimeError(
+            f"banco na versao de esquema {versao_atual}, codigo espera {VERSAO_ESQUEMA}, "
+            "e o salto nao e so aditivo - nao ha migracao para ele. Reconstrua o "
+            "store (python -m mesa.ingestao && python -m mesa.regras_run && ...)"
+        )
     conn.executescript(ESQUEMA_SQL.read_text(encoding="utf-8"))
     conn.execute(f"PRAGMA user_version = {VERSAO_ESQUEMA}")
     conn.commit()
+
+
+if __name__ == "__main__":
+    # `python -m mesa.db` - cria o store, ou migra um de versao aditiva. E o
+    # comando que a API aponta quando recusa um store de versao anterior.
+    import sys
+
+    caminho = Path(sys.argv[1]) if len(sys.argv) > 1 else CAMINHO_PADRAO
+    existia = caminho.exists()
+    antes = None
+    if existia:
+        bruta = sqlite3.connect(caminho)
+        antes = bruta.execute("PRAGMA user_version").fetchone()[0]
+        bruta.close()
+    conn = conectar(caminho)
+    conn.close()
+    if not existia:
+        print(f"store criado em {caminho} (esquema v{VERSAO_ESQUEMA})")
+    elif antes == VERSAO_ESQUEMA:
+        print(f"{caminho} ja esta no esquema v{VERSAO_ESQUEMA} - nada a fazer")
+    else:
+        print(f"{caminho} migrado: esquema v{antes} -> v{VERSAO_ESQUEMA}")

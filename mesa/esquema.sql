@@ -235,3 +235,82 @@ CREATE TABLE IF NOT EXISTS chamadas_llm (
 );
 
 CREATE INDEX IF NOT EXISTS idx_chamadas_parecer ON chamadas_llm(parecer_id);
+
+-- ===========================================================================
+-- FASE 4 - O HUMANO DECIDE, E A DECISAO VIRA REGISTRO
+-- ===========================================================================
+
+-- Trilha de TODA mudanca de estado de um caso: quem, de onde, para onde,
+-- quando. alertas.estado/analista_id dizem so o AGORA - quem pegou o caso ontem
+-- e devolveu some dali. Para compliance, o caminho importa tanto quanto o fim.
+--
+-- ator_tipo separa pessoa de processo: 'sistema' e o worker de triagem
+-- (ator 'sistema:triagem'), 'analista' e quem veio no header X-Analista.
+CREATE TABLE IF NOT EXISTS transicoes (
+    id              INTEGER PRIMARY KEY,
+    alerta_id       INTEGER NOT NULL REFERENCES alertas(id),
+    estado_anterior TEXT    NOT NULL
+        CHECK (estado_anterior IN ('novo', 'triado', 'em_analise', 'concluido')),
+    estado_novo     TEXT    NOT NULL
+        CHECK (estado_novo IN ('novo', 'triado', 'em_analise', 'concluido')),
+    ator            TEXT    NOT NULL,
+    ator_tipo       TEXT    NOT NULL CHECK (ator_tipo IN ('analista', 'sistema')),
+    registrado_em   TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_trans_alerta ON transicoes(alerta_id, id);
+
+CREATE TRIGGER IF NOT EXISTS transicoes_sem_update BEFORE UPDATE ON transicoes
+BEGIN
+    SELECT RAISE(ABORT, 'transicoes e append-only: a trilha nao se reescreve');
+END;
+
+CREATE TRIGGER IF NOT EXISTS transicoes_sem_delete BEFORE DELETE ON transicoes
+BEGIN
+    SELECT RAISE(ABORT, 'transicoes e append-only: a trilha nao se apaga');
+END;
+
+-- A decisao do analista. Uma por caso (UNIQUE): `concluido` e terminal nesta
+-- fase - reabrir caso decidido e papel de supervisor, que exige autenticacao
+-- de verdade. O UNIQUE faz o BANCO garantir isso, alem do compare-and-set.
+--
+-- parecer_id e o parecer que o analista VIU ao decidir (a API recusa decisao
+-- sobre parecer diferente do atual). NULL quando o caso foi decidido sem
+-- parecer - um caso pego antes da triagem, que o worker nao toca.
+--
+-- nivel_risco_agente e COPIADO do parecer visto, normalizado, em vez de lido
+-- por join na hora da metrica: a metrica agente-vs-humano compara com o que o
+-- analista tinha na frente, e isso nao pode depender de consulta nenhuma.
+CREATE TABLE IF NOT EXISTS decisoes (
+    id                   INTEGER PRIMARY KEY,
+    alerta_id            INTEGER NOT NULL UNIQUE REFERENCES alertas(id),
+    parecer_id           INTEGER          REFERENCES pareceres(id),
+    analista_id          TEXT    NOT NULL,
+    decisao              TEXT    NOT NULL CHECK (decisao IN ('concordo', 'discordo', 'escalar')),
+    nivel_risco_analista TEXT             CHECK (nivel_risco_analista IN ('baixo', 'médio', 'alto')),
+    nivel_risco_agente   TEXT             CHECK (nivel_risco_agente IN ('baixo', 'médio', 'alto')),
+    motivo               TEXT,
+    decidido_em          TEXT    NOT NULL,
+    -- as regras de cada decisao tambem no schema, nao so na API: concordar
+    -- exige um nivel do agente com que concordar; discordar exige o nivel
+    -- proposto e o porque; escalar exige o porque.
+    -- CUIDADO ao mexer: um CHECK cuja expressao da NULL PASSA. `length(trim(
+    -- NULL)) > 0` e NULL, e deixava "escalar sem motivo" entrar - pego pelo
+    -- teste. Por isso o COALESCE e o `IS` (que compara NULL como valor) no
+    -- lugar de `=`.
+    CHECK (decisao != 'concordo' OR (nivel_risco_agente IS NOT NULL
+                                     AND nivel_risco_analista IS nivel_risco_agente)),
+    CHECK (decisao != 'discordo' OR (nivel_risco_analista IS NOT NULL
+                                     AND COALESCE(length(trim(motivo)), 0) > 0)),
+    CHECK (decisao != 'escalar' OR COALESCE(length(trim(motivo)), 0) > 0)
+);
+
+CREATE TRIGGER IF NOT EXISTS decisoes_sem_update BEFORE UPDATE ON decisoes
+BEGIN
+    SELECT RAISE(ABORT, 'decisoes e append-only: decisao registrada nao se altera');
+END;
+
+CREATE TRIGGER IF NOT EXISTS decisoes_sem_delete BEFORE DELETE ON decisoes
+BEGIN
+    SELECT RAISE(ABORT, 'decisoes e append-only: decisao registrada nao se apaga');
+END;
