@@ -845,12 +845,125 @@
  ===> FASE 5 CONCLUIDA em 2026-09-27. Suite: 261 testes pytest (inclui os
       17 do Node). <===
 
+-------------------------------------------------------------------------------
+ FASE 6 - PRONTO PARA PILOTO: DADO QUE NAO SAI, IDENTIDADE QUE SE PROVA
+ Objetivo: as duas coisas que hoje impedem usar a Mesa com dado real de banco.
+ Portao  : (a) nenhum dado identificavel de cliente sai para o provedor de LLM
+           - provado por um provedor-espiao que grava TUDO o que recebe nos 30
+           clientes; (b) toda acao registrada na trilha tem uma identidade
+           AUTENTICADA, e a tela nao aceita mais "digite seu nome".
+-------------------------------------------------------------------------------
+ POR QUE ESTAS DUAS, E NESTA ORDEM
+   - LGPD (docs/DECISOES.md, "Enviar dados de cliente para uma API externa"):
+     hoje cada parecer envia ao Groq o cliente_id, os NOMES das contrapartes
+     (historico_cliente e operacoes_do_dia) e os valores. Com dado real, nome,
+     CPF/CNPJ e contraparte identificavel. Sem resolver isto, nao ha piloto -
+     por isso vem primeiro.
+   - Identidade: X-Analista e IDENTIFICACAO, nao autenticacao - qualquer um
+     digita qualquer nome. A trilha append-only da Fase 4 registra fielmente
+     o que foi DITO, nao quem fez. Sem autenticacao, a auditoria nao prova nada.
+
+ O QUE O CODIGO FAZ HOJE (levantado ao detalhar, 2026-09-30)
+   - nivel_2/agente.py e nivel_3/agente_mcp.py instanciam Groq(...) NA
+     IMPORTACAO: importar o modulo exige GROQ_API_KEY (os testes poem uma chave
+     falsa no conftest) e trocar de provedor e editar dois arquivos
+   - os testes trocam o LLM com monkeypatch em agente.CLIENT.chat.completions
+   - o hash do parecer (cache_parecer.calcular_hash) inclui o nome do MODELO:
+     mudar como o modelo e identificado invalida os 50 pareceres historicos e
+     custa 30 chamadas novas. RESTRICAO: para o provedor atual o hash tem que
+     sair IDENTICO (teste com os hashes gravados no store)
+
+ DECISOES A CONFIRMAR COM O FELIPE ANTES DO 6.4 (recomendacao em cada uma)
+   D1. Mecanismo de autenticacao.
+       Recomendado: AUTENTICACAO NO PROXY. Um proxy de identidade na frente da
+           API (oauth2-proxy com o SSO do banco - OIDC/AD) autentica, e a API so
+           confia no cabecalho de identidade que ELE poe. A API continua presa
+           ao 127.0.0.1: so o proxy a alcanca. Quase nenhum codigo de seguranca
+           escrito a mao - que e o que se quer num banco.
+       Alternativas descartadas: senha propria na Mesa (reinventar login e o
+           erro classico); OIDC direto no FastAPI (mais codigo e dependencia,
+           mesmo resultado).
+   D2. Pseudonimizar OU modelo no perimetro? Recomendado: os DOIS, em camadas.
+       A interface (6.1) permite o modelo interno; a pseudonimizacao (6.2) vale
+       para qualquer provedor - inclusive o interno, que tambem nao precisa
+       saber quem e o cliente para achar o padrao.
+   D3. Valores e datas continuam saindo em claro: sao o que o modelo interpreta,
+       e o verificador de aderencia confere NUMEROS. Risco residual (valor +
+       data podem reidentificar alguem com acesso a outra base) documentado,
+       nao escondido.
+
+ [ ] 6.1  ProvedorLLM - a fronteira do LLM atras de uma interface
+          - nivel_2/provedor_llm.py: Protocol ProvedorLLM (completar mensagens
+            + tools -> resposta no formato que o agente ja trata) e tres
+            implementacoes: Groq (a de hoje), "compativel com OpenAI" por URL
+            (vLLM/Ollama/modelo do banco no perimetro - via httpx, que ja e
+            dependencia) e Falso (para testes)
+          - escolha por ambiente (LLM_PROVEDOR, LLM_URL); cliente criado na
+            PRIMEIRA chamada, nao na importacao
+          - agente.py e agente_mcp.py passam a pedir o provedor; nivel_2 segue
+            sem importar mesa
+          - os testes trocam o provedor, nao fazem monkeypatch no SDK
+          ACEITE: a suite inteira passa SEM GROQ_API_KEY (o hack do conftest
+                  sai); os 30 alertas triados com o provedor Groq reaproveitam
+                  os mesmos 50 pareceres (hash identico); um servidor falso
+                  compativel com OpenAI, local, responde e o parecer e gravado.
+ [ ] 6.2  Pseudonimizacao na fronteira
+          - tudo o que vai ao provedor passa por uma camada so: cliente_id e
+            nomes de contraparte viram fichas (CLIENTE, CP-1, CP-2...) nas
+            mensagens, nos argumentos das ferramentas e nos retornos delas; o
+            mapa ficha->nome vive so na memoria daquela triagem
+          - a resposta volta reidentificada antes de gravar; ficha que o modelo
+            deformou ("contraparte 1") e detectada e o parecer e marcado - nao
+            se grava texto com ficha orfa como se estivesse completo
+          - o hash continua sobre o dado REAL (o store e interno)
+          ACEITE: provedor-espiao grava tudo o que recebe na triagem dos 30:
+                  zero ocorrencia de cliente_id ou nome de contraparte reais;
+                  pareceres gravados com os nomes certos; ficha deformada vira
+                  parecer marcado, nao texto errado. Aderencia continua 28/30.
+ [ ] 6.3  Esquema v8: de onde veio cada parecer e cada acao
+          - pareceres.provedor e pareceres.pseudonimizado (ALTER, migracao
+            v7->v8 no mesmo padrao da Fase 5; pareceres antigos = 'groq', 0)
+          - transicoes.autenticacao e decisoes.autenticacao ('declarada' |
+            'proxy'): uma linha da trilha diz se a identidade foi PROVADA
+          - tabela usuarios (id, nome, papel analista|supervisor, ativo)
+          ACEITE: v7 migrado == v8 novo (DDL v7 congelado); store real migra
+                  sem perder nada; o historico antigo aparece como 'declarada'.
+ [ ] 6.4  Autenticacao (depende de D1)
+          - MESA_AUTH=proxy: identidade so do cabecalho do proxy (nome
+            configuravel); X-Analista e IGNORADO e sua presenca registrada;
+            usuario inativo ou desconhecido = 403
+          - MESA_AUTH=dev (padrao local): o comportamento de hoje, e toda acao
+            gravada como 'declarada' - nunca se passa por autenticada
+          - docker-compose com oauth2-proxy de exemplo, API sem porta publica
+          ACEITE: em modo proxy, POST sem o cabecalho do proxy = 401, com
+                  X-Analista forjado = 401 e nada gravado; com o cabecalho, a
+                  trilha grava o usuario e 'proxy'. Teste com um proxy de
+                  mentira na frente do uvicorn real (nao so TestClient).
+ [ ] 6.5  Perfil supervisor
+          - reatribuir caso em analise de A para B e devolver caso de outro:
+            so supervisor, motivo obrigatorio, na trilha com o papel
+          - FORA desta fase, registrado: reabrir caso concluido (exige versao
+            de decisao - hoje UNIQUE(alerta_id) - e e mudanca de tabela, nao
+            ALTER); dupla checagem (4 olhos) para decisao de alto risco
+          ACEITE: analista tentando reatribuir = 403; supervisor reatribui com
+                  motivo e a trilha mostra quem, de quem, para quem e por que.
+ [ ] 6.6  Tela com identidade
+          - modo proxy: some o campo "seu nome"; o topo mostra quem esta logado
+            e o papel; acoes de supervisor so para supervisor
+          - trilha e decisao mostram "identidade provada" x "declarada"
+          ACEITE: no navegador, analista e supervisor veem telas diferentes, e
+                  a trilha de um caso mostra as duas origens de identidade.
+
+ CANDIDATOS A FASE 7 (anotados, nao detalhados): fluxo do segundo nivel do
+ "escalar" (comite / comunicacao ao COAF); backup do store e alerta de falha
+ do ciclo; Postgres para multiusuario; reabrir caso com versao de decisao;
+ dupla checagem.
+
 ===============================================================================
  DIVIDA TECNICA E RISCOS CONHECIDOS (nao virar surpresa depois)
 ===============================================================================
  [ ] LGPD: pipeline envia dado de cliente para API de terceiro. Bloqueia piloto
-     com dado real. Mitigacao: interface ProvedorLLM para trocar por modelo no
-     perimetro do banco. (docs/DECISOES.md, secao 2)
+     com dado real. -> FASE 6 (6.1 ProvedorLLM, 6.2 pseudonimizacao).
  [x] Reingestao de arquivo CORRIGIDO nao atualiza operacao existente.
      RESOLVIDO na Fase 5.2: correcao vira versao nova, anterior no historico.
  [ ] mesa/ciclo.py usa fcntl (trava de arquivo): roda em Linux/macOS/Docker,
@@ -866,12 +979,23 @@
      pytest.approx(rel=1e-9) e REGISTRAR a decisao, nao afrouxar em silencio.
  [ ] data como TEXT 'YYYY-MM-DD' (SQLite nao tem tipo data). Ordena correto
      como string; nunca misturar formato na escrita.
- [ ] Portabilidade Postgres: todo o DDL e portavel exceto os 2 triggers
-     (RAISE(ABORT) -> RAISE EXCEPTION). Manter DDL num arquivo so.
+ [ ] Portabilidade Postgres: todo o DDL e portavel exceto os TRIGGERS - eram 2
+     quando esta nota foi escrita, hoje sao 10 (pareceres, transicoes,
+     decisoes, operacoes, operacoes_historico), e o de versao de operacao faz
+     INSERT, nao so RAISE. RAISE(ABORT) -> RAISE EXCEPTION em funcao plpgsql.
+     Continua localizado (um arquivo), mas nao e mais "2 linhas".
 
 ===============================================================================
  REGISTRO DE EXECUCAO (o que foi feito, quando, e o que a evidencia mostrou)
 ===============================================================================
+ 2026-09-30  Fase 6 detalhada (6.1 a 6.6): LGPD na fronteira do LLM e
+             identidade autenticada. Tres decisoes (D1-D3) para o Felipe
+             confirmar antes do 6.4. Restricao levantada ao detalhar: o hash do
+             parecer inclui o nome do modelo - a interface nova nao pode muda-lo
+             para o provedor atual. Nota de Postgres corrigida (10 triggers).
+             Tambem nesta data: botao Metricas testado no servidor real (so
+             leitura); enderecos da tela versionados pelo conteudo; "Execucao
+             null" e favicon corrigidos. 265 testes.
  2026-09-27  AUDITORIA DO SISTEMA INTEIRO (pedido do Felipe, apos a Fase 5).
              264 testes, 0 avisos. Pipeline montado do ZERO num banco
              temporario: 8 numeros + top10 OK, 30 triados com 0 chamada de API,
