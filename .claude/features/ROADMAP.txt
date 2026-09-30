@@ -846,7 +846,134 @@
       17 do Node). <===
 
 -------------------------------------------------------------------------------
- FASE 6 - PRONTO PARA PILOTO: DADO QUE NAO SAI, IDENTIDADE QUE SE PROVA
+ FASE 6 - CONTRA-ISCA: O QUE PASSOU ENQUANTO OLHAVAMOS
+ Objetivo: achar o fluxo que passa AO LADO de um alerta chamativo - operacoes
+           pequenas, espalhadas em outros clientes, ligadas a ele - que as
+           regras de hoje nao veem por construcao.
+ Portao  : num cenario de isca PLANTADO com os DOIS padroes (fracionamento
+           distribuido e volume grande passando durante a analise), o botao
+           acha as operacoes plantadas de cada um com acerto MEDIDO e
+           registrado (quantas achou, quanto lixo trouxe junto), e nenhuma
+           ligacao aparece na tela sem dizer de onde vem.
+-------------------------------------------------------------------------------
+ ORIGEM (ideia do Felipe, 2026-09-30)
+   A PF recebe a denuncia de um caminhao com 30 kg de cocaina, monta a blitz e
+   acha a droga. Enquanto esta ocupada com ele, passam 3 caminhoes com 5
+   toneladas de pasta base. O caminhao pequeno era verdade - e era ISCA.
+   Aplicado a PLD: quantos casos chamativos nao estao ocupando o analista
+   enquanto operacoes pequenas passam pelo lado?
+
+ NOME (decidido ao estruturar)
+   NAO "falso positivo". O caminhao dos 30 kg e VERDADEIRO positivo (a
+   denuncia era verdade); o dano sao os FALSOS NEGATIVOS que passaram ao mesmo
+   tempo. E em PLD "falso positivo" ja tem dono - o alerta que se mostrou
+   legitimo, a maioria de todos os alertas: um botao com esse nome seria lido
+   como "marcar como falso positivo", o contrario da ideia. Nome de trabalho:
+   "Cacar o que passou" (final a confirmar - E1).
+
+ POR QUE O SISTEMA DE HOJE NAO VE ISTO
+   As regras olham UM cliente por vez (a Fase 5 prende isso num teste:
+   test_regras_sobre_o_delta_sao_as_mesmas_da_base_inteira). Fracionamento
+   espalhado por 10 clientes deixa cada um abaixo do limite: nenhuma regra
+   dispara. A contra-isca e exatamente o olhar ENTRE clientes.
+   IMPORTANTE: ela e uma CONSULTA sob demanda, nao uma regra do regras_run.
+   A premissa "regras por cliente" (base da execucao incremental) continua
+   valendo; se um dia a caca virar regra automatica, aquele teste quebra - e o
+   delta tem que alargar, como ja esta escrito na Fase 5.
+
+ MATERIA-PRIMA MEDIDA NA BASE (2026-09-30)
+   111 contrapartes; 64 aparecem em 3+ clientes; 57 ligam cliente sinalizado a
+   cliente SEM sinal. Na base sintetica isso e COINCIDENCIA (nomes sorteados de
+   uma lista curta) - o que ja mostra o maior risco: a caca gerar seus proprios
+   falsos positivos. Contraparte popular (a distribuidora de energia de todo
+   mundo) nao pode pesar como ligacao rara.
+
+ DUAS HIPOTESES - AS DUAS NO ESCOPO (decisao do Felipe, 2026-09-30: "o que me
+ preocupa sao os dois" - a fase ataca fracionamento E volume grande passando)
+   A. Fracionamento DISTRIBUIDO: operacoes logo abaixo dos limites, em varios
+      clientes, com a mesma contraparte rara, na mesma janela de dias.
+   B. Volume grande DURANTE A ANALISE: o que entrou (lotes do ciclo) enquanto
+      o caso chamativo estava em_analise - a trilha da Fase 4 sabe exatamente
+      quando. Aqui o valor pode ser ALTO: o que o torna suspeito nao e ficar
+      abaixo do limite, e passar ligado a isca enquanto a atencao estava nela.
+   As duas caem no mesmo motor (6.1) com componentes diferentes: A pesa
+   "logo abaixo do limite"; B pesa "dentro da janela de analise" e volume.
+
+ DECISOES DE DESENHO
+   - calculo em pandas, deterministico; o LLM NAO participa (principio 4) - e,
+     de quebra, a caca nao manda dado nenhum para fora (nada muda na LGPD)
+   - sob demanda: o analista clica num caso. Rodar sozinho nos casos mais
+     chamativos fica para depois de medir quanto lixo a caca traz
+   - "logo abaixo do limite" sai dos PARAMETROS GRAVADOS na execucao do alerta
+     (execucoes_regras.parametros_json), nunca de numero fixo no codigo
+   - peso da contraparte pela raridade (quantos clientes a usam): ligacao por
+     contraparte que 7 clientes usam vale muito menos que por uma que 2 usam
+   - cada ligacao mostrada com a procedencia de cada componente ("mesma
+     contraparte rara X, usada por 2 clientes; 3 dias depois; R$ 19.400, 97% do
+     limite de R$ 20.000") - principio 2
+   - o sistema caca, o humano decide: o resultado e SUSPEITA registrada pelo
+     analista, nunca alerta criado sozinho (principio 1)
+
+ DECISOES A CONFIRMAR COM O FELIPE
+   E1. Nome do botao. Opcoes: "Cacar o que passou" (recomendado - diz o que
+       faz), "Contra-isca", "O que passou enquanto olhavamos".
+   E2. RESOLVIDA: as duas hipoteses, ambas no portao. Ordem de construcao so
+       por dependencia: A primeiro (roda sobre a base), B em seguida (usa a
+       trilha e os lotes do ciclo).
+   E3. O que o analista faz com uma ligacao suspeita. Recomendado: REGISTRAR a
+       suspeita (tabela nova, append-only, com origem e motivo) - criar alerta
+       formal para outro cliente exigiria nova `origem` em alertas, cujo CHECK
+       nao se altera no SQLite (reconstrucao de tabela). Fica para depois.
+
+ [ ] 6.0  Cenario de isca plantado - ANTES do detector
+          - gerador deterministico (semente fixa): um caso chamativo (a isca) +
+            padrao A: N operacoes pequenas em outros clientes ligadas a ela
+              (contraparte rara, janela de dias, logo abaixo do limite)
+            padrao B: um lote chegando ENQUANTO a isca esta em analise, com
+              operacoes de valor alto em outros clientes ligadas a ela
+            + RUIDO proposital (contraparte popular, valores altos fora da
+              janela, lote fora do periodo de analise)
+          - por que primeiro: sem o gabarito, "o botao achou coisas" nao prova
+            nada - e a mesma licao da mediana-armadilha da Fase 3
+          ACEITE: o cenario, ingerido num store de teste, NAO e pego pelas
+                  regras de hoje (prova o ponto cego); o gabarito de cada
+                  padrao fica gravado junto do cenario.
+ [ ] 6.1  Motor de ligacoes (mesa/contra_isca.py)
+          - dado um alerta: operacoes de OUTROS clientes pontuadas por
+            contraparte rara, janela de tempo e faixa abaixo do limite; cada
+            componente do escore com a sua procedencia
+          ACEITE: no cenario plantado, as N plantadas no topo da lista; a
+                  contraparte popular do ruido nao sobe; mudar os parametros
+                  gravados da execucao muda a faixa "abaixo do limite".
+ [ ] 6.2  Medir o acerto
+          - varias sementes do cenario; quantas plantadas o motor acha
+            (cobertura) e quanto do topo e ruido (precisao)
+          - meta definida ANTES de medir e registrada; nao atingiu = redesenha
+            o motor, nao baixa a meta
+          ACEITE: numeros gravados no roadmap, por semente, com a meta ao lado.
+ [ ] 6.3  Esquema v8 e API
+          - tabela suspeitas (append-only): alerta de origem, cliente e
+            operacoes apontados, componentes do escore, analista, motivo, quando
+          - GET /alertas/{id}/contra-isca (ligacoes com procedencia);
+            POST /alertas/{id}/suspeitas (registrar, com X-Analista)
+          ACEITE: v7 migrado == v8 novo (DDL v7 congelado); suspeita nao se
+                  altera nem se apaga; a caca nao escreve nada, so o registro.
+ [ ] 6.4  Tela: o botao e o mapa
+          - "Cacar o que passou" no caso; a isca no centro, os clientes ligados
+            em volta, cada ligacao com a frase de procedencia; registrar
+            suspeita a partir de uma ligacao
+          ACEITE: no navegador, com o cenario plantado, o analista ve as
+                  ligacoes plantadas e registra uma suspeita que aparece no caso.
+ [ ] 6.5  Padrao B no motor: o que entrou enquanto o caso estava em analise
+          - janela = os periodos em_analise da trilha; operacoes = as de lotes
+            ingeridos nesses periodos, em outros clientes, ligadas ao caso
+          ACEITE: trilha e lotes fabricados com horarios conhecidos -> so as
+                  operacoes dos lotes dentro da janela aparecem; no cenario
+                  plantado, as de valor alto do padrao B sobem mesmo NAO
+                  estando abaixo de limite nenhum; acerto medido como no 6.2.
+
+-------------------------------------------------------------------------------
+ FASE 7 - PRONTO PARA PILOTO: DADO QUE NAO SAI, IDENTIDADE QUE SE PROVA
  Objetivo: as duas coisas que hoje impedem usar a Mesa com dado real de banco.
  Portao  : (a) nenhum dado identificavel de cliente sai para o provedor de LLM
            - provado por um provedor-espiao que grava TUDO o que recebe nos 30
@@ -873,7 +1000,7 @@
      custa 30 chamadas novas. RESTRICAO: para o provedor atual o hash tem que
      sair IDENTICO (teste com os hashes gravados no store)
 
- DECISOES A CONFIRMAR COM O FELIPE ANTES DO 6.4 (recomendacao em cada uma)
+ DECISOES A CONFIRMAR COM O FELIPE ANTES DO 7.4 (recomendacao em cada uma)
    D1. Mecanismo de autenticacao.
        Recomendado: AUTENTICACAO NO PROXY. Um proxy de identidade na frente da
            API (oauth2-proxy com o SSO do banco - OIDC/AD) autentica, e a API so
@@ -884,7 +1011,7 @@
            erro classico); OIDC direto no FastAPI (mais codigo e dependencia,
            mesmo resultado).
    D2. Pseudonimizar OU modelo no perimetro? Recomendado: os DOIS, em camadas.
-       A interface (6.1) permite o modelo interno; a pseudonimizacao (6.2) vale
+       A interface (7.1) permite o modelo interno; a pseudonimizacao (7.2) vale
        para qualquer provedor - inclusive o interno, que tambem nao precisa
        saber quem e o cliente para achar o padrao.
    D3. Valores e datas continuam saindo em claro: sao o que o modelo interpreta,
@@ -892,7 +1019,7 @@
        data podem reidentificar alguem com acesso a outra base) documentado,
        nao escondido.
 
- [ ] 6.1  ProvedorLLM - a fronteira do LLM atras de uma interface
+ [ ] 7.1  ProvedorLLM - a fronteira do LLM atras de uma interface
           - nivel_2/provedor_llm.py: Protocol ProvedorLLM (completar mensagens
             + tools -> resposta no formato que o agente ja trata) e tres
             implementacoes: Groq (a de hoje), "compativel com OpenAI" por URL
@@ -907,7 +1034,7 @@
                   sai); os 30 alertas triados com o provedor Groq reaproveitam
                   os mesmos 50 pareceres (hash identico); um servidor falso
                   compativel com OpenAI, local, responde e o parecer e gravado.
- [ ] 6.2  Pseudonimizacao na fronteira
+ [ ] 7.2  Pseudonimizacao na fronteira
           - tudo o que vai ao provedor passa por uma camada so: cliente_id e
             nomes de contraparte viram fichas (CLIENTE, CP-1, CP-2...) nas
             mensagens, nos argumentos das ferramentas e nos retornos delas; o
@@ -920,15 +1047,15 @@
                   zero ocorrencia de cliente_id ou nome de contraparte reais;
                   pareceres gravados com os nomes certos; ficha deformada vira
                   parecer marcado, nao texto errado. Aderencia continua 28/30.
- [ ] 6.3  Esquema v8: de onde veio cada parecer e cada acao
+ [ ] 7.3  Esquema v9: de onde veio cada parecer e cada acao
           - pareceres.provedor e pareceres.pseudonimizado (ALTER, migracao
-            v7->v8 no mesmo padrao da Fase 5; pareceres antigos = 'groq', 0)
+            v8->v9 no mesmo padrao da Fase 5; pareceres antigos = 'groq', 0)
           - transicoes.autenticacao e decisoes.autenticacao ('declarada' |
             'proxy'): uma linha da trilha diz se a identidade foi PROVADA
           - tabela usuarios (id, nome, papel analista|supervisor, ativo)
-          ACEITE: v7 migrado == v8 novo (DDL v7 congelado); store real migra
+          ACEITE: v8 migrado == v9 novo (DDL v8 congelado); store real migra
                   sem perder nada; o historico antigo aparece como 'declarada'.
- [ ] 6.4  Autenticacao (depende de D1)
+ [ ] 7.4  Autenticacao (depende de D1)
           - MESA_AUTH=proxy: identidade so do cabecalho do proxy (nome
             configuravel); X-Analista e IGNORADO e sua presenca registrada;
             usuario inativo ou desconhecido = 403
@@ -939,7 +1066,7 @@
                   X-Analista forjado = 401 e nada gravado; com o cabecalho, a
                   trilha grava o usuario e 'proxy'. Teste com um proxy de
                   mentira na frente do uvicorn real (nao so TestClient).
- [ ] 6.5  Perfil supervisor
+ [ ] 7.5  Perfil supervisor
           - reatribuir caso em analise de A para B e devolver caso de outro:
             so supervisor, motivo obrigatorio, na trilha com o papel
           - FORA desta fase, registrado: reabrir caso concluido (exige versao
@@ -947,14 +1074,14 @@
             ALTER); dupla checagem (4 olhos) para decisao de alto risco
           ACEITE: analista tentando reatribuir = 403; supervisor reatribui com
                   motivo e a trilha mostra quem, de quem, para quem e por que.
- [ ] 6.6  Tela com identidade
+ [ ] 7.6  Tela com identidade
           - modo proxy: some o campo "seu nome"; o topo mostra quem esta logado
             e o papel; acoes de supervisor so para supervisor
           - trilha e decisao mostram "identidade provada" x "declarada"
           ACEITE: no navegador, analista e supervisor veem telas diferentes, e
                   a trilha de um caso mostra as duas origens de identidade.
 
- CANDIDATOS A FASE 7 (anotados, nao detalhados): fluxo do segundo nivel do
+ CANDIDATOS A FASE 8 (anotados, nao detalhados): fluxo do segundo nivel do
  "escalar" (comite / comunicacao ao COAF); backup do store e alerta de falha
  do ciclo; Postgres para multiusuario; reabrir caso com versao de decisao;
  dupla checagem.
@@ -963,7 +1090,7 @@
  DIVIDA TECNICA E RISCOS CONHECIDOS (nao virar surpresa depois)
 ===============================================================================
  [ ] LGPD: pipeline envia dado de cliente para API de terceiro. Bloqueia piloto
-     com dado real. -> FASE 6 (6.1 ProvedorLLM, 6.2 pseudonimizacao).
+     com dado real. -> FASE 7 (7.1 ProvedorLLM, 7.2 pseudonimizacao).
  [x] Reingestao de arquivo CORRIGIDO nao atualiza operacao existente.
      RESOLVIDO na Fase 5.2: correcao vira versao nova, anterior no historico.
  [ ] mesa/ciclo.py usa fcntl (trava de arquivo): roda em Linux/macOS/Docker,
@@ -988,6 +1115,14 @@
 ===============================================================================
  REGISTRO DE EXECUCAO (o que foi feito, quando, e o que a evidencia mostrou)
 ===============================================================================
+ 2026-09-30  RENUMERACAO (decisao do Felipe): a contra-isca - ideia dele, a
+             partir da historia do caminhao-isca - entra como FASE 6. A fase
+             "pronto para piloto" detalhada mais cedo hoje (LGPD + identidade)
+             passa a ser a FASE 7: os passos 6.1-6.6 da entrada logo abaixo sao
+             os 7.1-7.6 de agora, e o esquema dela vai de v8 para v9 (a v8 e a
+             da tabela de suspeitas da Fase 6). Candidatos futuros: Fase 8.
+             ATENCAO: a Fase 7 continua sendo a que libera DADO REAL. Um deploy
+             de demonstracao (base sintetica) nao depende dela; um piloto sim.
  2026-09-30  Fase 6 detalhada (6.1 a 6.6): LGPD na fronteira do LLM e
              identidade autenticada. Tres decisoes (D1-D3) para o Felipe
              confirmar antes do 6.4. Restricao levantada ao detalhar: o hash do
