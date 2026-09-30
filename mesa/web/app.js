@@ -760,7 +760,9 @@ function desenharMetricas(m, linhaDeBase) {
     h("div", { class: "caso-titulo" },
       h("h1", {}, "Métricas da mesa"),
       h("p", { class: "caso-sub" },
-        `Execução ${m.execucao_id} · ${m.decididos} de ${m.casos} casos decididos · `,
+        // sem execucao_id a API mede todos os casos vigentes (Fase 5.1)
+        m.execucao_id == null ? "Casos vigentes · " : `Execução ${m.execucao_id} · `,
+        `${m.decididos} de ${m.casos} casos decididos · `,
         `${m.por_decisao.concordo} concordo · ${m.por_decisao.discordo} discordo · ${m.por_decisao.escalar} escalar`)));
 
   if (semDecisao) {

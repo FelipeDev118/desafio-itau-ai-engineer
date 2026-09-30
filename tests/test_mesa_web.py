@@ -92,6 +92,9 @@ def test_tela_nao_carrega_nada_de_fora(arquivo):
     Os comentarios contam tambem - uma URL comentada hoje e um <link> amanha."""
     conteudo = (WEB / arquivo).read_text(encoding="utf-8")
     externas = re.findall(r"https?://[^\s\"')]+", conteudo)
+    # Unica excecao, e nomeada: o namespace do SVG no icone embutido. E um
+    # identificador que o SVG exige, nao um endereco - o navegador nunca o busca.
+    externas = [u for u in externas if u != "http://www.w3.org/2000/svg"]
     assert externas == [], externas
 
 
