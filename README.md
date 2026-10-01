@@ -1,5 +1,7 @@
 # Desafio Técnico — Estágio em Engenharia de IA
 
+[![CI](https://github.com/FelipeDev118/desafio-itau-ai-engineer/actions/workflows/ci.yml/badge.svg)](https://github.com/FelipeDev118/desafio-itau-ai-engineer/actions/workflows/ci.yml)
+
 Triagem de operações financeiras para Prevenção à Lavagem de Dinheiro (PLD/AML), combinando
 **regras determinísticas em pandas** (o que é cálculo) com um **LLM** (o que é interpretação e
 redação de parecer).

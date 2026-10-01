@@ -1,0 +1,44 @@
+# Integracao continua. Nenhum job chama o LLM nem precisa de GROQ_API_KEY:
+# os testes mockam a API, e o smoke test so reexecuta a camada deterministica.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  testes:
+    name: Testes + reprodutibilidade
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Mesma versao do Dockerfile - a solucao foi desenvolvida e executada em 3.12.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: pytest
+        run: pytest -v
+
+      # Prova de que o pipeline de regras chega aos MESMOS numeros da entrega
+      # numa maquina limpa, nao so que ele executa.
+      - name: Verificacao de reprodutibilidade
+        run: python verificar_ambiente.py
+
+  docker:
+    name: Imagem Docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # O compose referencia .env em servicos que usam LLM; o exemplo (chave vazia)
+      # basta para carregar o projeto - o servico verificar nao usa a chave.
+      - run: cp .env.example .env
+
+      - name: Build + smoke test no container
+        run: docker compose run --rm verificar
